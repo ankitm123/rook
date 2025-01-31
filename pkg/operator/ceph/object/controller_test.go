@@ -67,7 +67,7 @@ const (
 		"id": "fd8ff110-d3fd-49b4-b24f-f6cd3dddfedf",
 		"name": "my-store",
 		"api_name": "my-store",
-		"is_master": "true",
+		"is_master": true,
 		"endpoints": [
 			"http://rook-ceph-rgw-my-store.rook-ceph.svc:80"
 		],
@@ -145,9 +145,10 @@ const (
 	dummyVersionsRaw          = `
 	{
 		"mon": {
-			"ceph version 17.2.1 (0000000000000000) quincy (stable)": 3
+			"ceph version 19.2.1 (0000000000000000) squid (stable)": 3
 		}
 	}`
+	//nolint:gosec // only test values, not a real secret
 	userCreateJSON = `{
 	"user_id": "my-user",
 	"display_name": "my-user",
@@ -202,7 +203,7 @@ const (
 		"id": "fd8ff110-d3fd-49b4-b24f-f6cd3dddfedf",
 		"name": "zonegroup-a",
 		"api_name": "zonegroup-a",
-		"is_master": "true",
+		"is_master": true,
 		"endpoints": [],
 		"hostnames": [],
 		"hostnames_s3website": [],
@@ -238,7 +239,7 @@ const (
 		"id": "fd8ff110-d3fd-49b4-b24f-f6cd3dddfedf",
 		"name": "zonegroup-a",
 		"api_name": "zonegroup-a",
-		"is_master": "true",
+		"is_master": true,
 		"endpoints": [
 			"http://rook-ceph-rgw-my-store.rook-ceph.svc:80"
         ],
@@ -402,7 +403,7 @@ func TestCephObjectStoreController(t *testing.T) {
 	}
 
 	currentAndDesiredCephVersion = func(ctx context.Context, rookImage string, namespace string, jobName string, ownerInfo *k8sutil.OwnerInfo, context *clusterd.Context, cephClusterSpec *cephv1.ClusterSpec, clusterInfo *client.ClusterInfo) (*cephver.CephVersion, *cephver.CephVersion, error) {
-		return &cephver.Pacific, &cephver.Pacific, nil
+		return &cephver.Reef, &cephver.Reef, nil
 	}
 
 	t.Run("error - no ceph cluster", func(t *testing.T) {
@@ -488,7 +489,7 @@ func TestCephObjectStoreController(t *testing.T) {
 					// ceph actually outputs this all on one line, but this parses the same
 					return `[
 						{"poolnum":1,"poolname":"replicapool"},
-						{"poolnum":2,"poolname":"device_health_metrics"},
+						{"poolnum":2,"poolname":".mgr"},
 						{"poolnum":3,"poolname":".rgw.root"},
 						{"poolnum":4,"poolname":"my-store.rgw.buckets.index"},
 						{"poolnum":5,"poolname":"my-store.rgw.buckets.non-ec"},
@@ -498,6 +499,13 @@ func TestCephObjectStoreController(t *testing.T) {
 						{"poolnum":9,"poolname":"my-store.rgw.buckets.data"}
 					]`, nil
 				}
+				if args[0] == "mirror" && args[2] == "info" {
+					return "{}", nil
+				}
+				if args[0] == "mirror" && args[2] == "disable" {
+					return "", nil
+				}
+
 				return "", nil
 			},
 			MockExecuteCommandWithTimeout: func(timeout time.Duration, command string, args ...string) (string, error) {
@@ -538,7 +546,7 @@ func TestCephObjectStoreController(t *testing.T) {
 		assert.NotEmpty(t, objectStore.Status.Info["endpoint"], objectStore)
 		assert.Equal(t, "http://rook-ceph-rgw-my-store.rook-ceph.svc:80", objectStore.Status.Info["endpoint"], objectStore)
 		assert.True(t, calledCommitConfigChanges)
-		assert.Equal(t, 16, r.clusterInfo.CephVersion.Major)
+		assert.Equal(t, 18, r.clusterInfo.CephVersion.Major)
 	})
 }
 
@@ -734,7 +742,7 @@ func TestCephObjectStoreControllerMultisite(t *testing.T) {
 	}
 
 	currentAndDesiredCephVersion = func(ctx context.Context, rookImage string, namespace string, jobName string, ownerInfo *k8sutil.OwnerInfo, context *clusterd.Context, cephClusterSpec *cephv1.ClusterSpec, clusterInfo *client.ClusterInfo) (*cephver.CephVersion, *cephver.CephVersion, error) {
-		return &cephver.Pacific, &cephver.Pacific, nil
+		return &cephver.Reef, &cephver.Reef, nil
 	}
 
 	t.Run("create an object store", func(t *testing.T) {
@@ -906,7 +914,7 @@ func TestCephObjectExternalStoreController(t *testing.T) {
 	}
 
 	currentAndDesiredCephVersion = func(ctx context.Context, rookImage string, namespace string, jobName string, ownerInfo *k8sutil.OwnerInfo, context *clusterd.Context, cephClusterSpec *cephv1.ClusterSpec, clusterInfo *client.ClusterInfo) (*cephver.CephVersion, *cephver.CephVersion, error) {
-		return &cephver.Pacific, &cephver.Pacific, nil
+		return &cephver.Reef, &cephver.Reef, nil
 	}
 
 	{
@@ -987,22 +995,22 @@ func TestDiffVersions(t *testing.T) {
 			if args[0] == "versions" {
 				return `{
     "mon": {
-        "ceph version 17.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) quincy (dev)": 3
+        "ceph version 19.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) squid (dev)": 3
     },
     "mgr": {
-        "ceph version 17.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) quincy (dev)": 1
+        "ceph version 19.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) squid (dev)": 1
     },
     "osd": {
-        "ceph version 17.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) quincy (dev)": 3
+        "ceph version 19.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) squid (dev)": 3
     },
     "mds": {
-        "ceph version 17.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) quincy (dev)": 2
+        "ceph version 19.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) squid (dev)": 2
     },
     "rgw": {
-        "ceph version 17.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) quincy (dev)": 1
+        "ceph version 19.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) squid (dev)": 1
     },
     "overall": {
-        "ceph version 17.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) quincy (dev)": 10
+        "ceph version 19.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) squid (dev)": 10
     }
 }`, nil
 			}
@@ -1012,7 +1020,7 @@ func TestDiffVersions(t *testing.T) {
 	c := &clusterd.Context{Executor: executor}
 
 	// desiredCephVersion comes from DetectCephVersion() (ceph --version) which uses ExtractCephVersion()
-	desiredCephVersion, err := cephver.ExtractCephVersion("ceph version 17.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) quincy (dev)")
+	desiredCephVersion, err := cephver.ExtractCephVersion("ceph version 19.0.0-9718-g4ff72306 (4ff723061fc15c803dcf6556d02f56bdf56de5fa) squid (dev)")
 	assert.NoError(t, err)
 
 	// runningCephVersion comes from LeastUptodateDaemonVersion()

@@ -64,15 +64,15 @@ CephRBDMirror CRD is used by Rook to allow creation and updating rbd-mirror daem
 
 ### External Storage Cluster
 
-An [external cluster](../CRDs/Cluster/external-cluster.md) is a Ceph configuration that is managed outside of the local K8s cluster.
+An [external cluster](../CRDs/Cluster/external-cluster/external-cluster.md) is a Ceph configuration that is managed outside of the local K8s cluster.
 
 ### Host Storage Cluster
 
 A [host storage cluster](../CRDs/Cluster/host-cluster.md) is where Rook configures Ceph to store data directly on the host devices.
 
-### Krew Plugin
+### kubectl Plugin
 
-The [Rook Krew plugin](../Troubleshooting/krew-plugin.md) is a tool to help troubleshoot your Rook cluster.
+The [Rook kubectl plugin](../Troubleshooting/kubectl-plugin.md) is a tool to help troubleshoot your Rook cluster.
 
 ### Object Bucket Claim (OBC)
 

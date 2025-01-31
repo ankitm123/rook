@@ -6,7 +6,7 @@ apiVersion: ceph.rook.io/v1
 kind: CephClient
 metadata:
   name: sqlitevfs
-  namespace: rook-ceph
+  namespace: rook-ceph # namespace:cluster
 spec:
   caps:
     mon: 'allow r'
@@ -111,7 +111,7 @@ spec:
       initContainers:
         ## Setup Ceph SQLite VFS
         - name: setup
-          image: bitnami/kubectl:1.21.11
+          image: docker.io/bitnami/kubectl:1.21.11
           command:
             - /bin/bash
             - -c

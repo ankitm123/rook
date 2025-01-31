@@ -25,6 +25,7 @@ import (
 
 	apps "k8s.io/api/apps/v1"
 	core "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
@@ -38,6 +39,9 @@ var (
 	//go:embed image-pull-daemonset.yaml
 	imagePullDaemonSet string
 
+	//go:embed host-daemonset.yaml
+	hostCheckerDaemonSet string
+
 	//go:embed client-daemonset.yaml
 	clientDaemonSet string
 )
@@ -45,17 +49,30 @@ var (
 type webServerTemplateConfig struct {
 	NetworksAnnotationValue string
 	NginxImage              string
+	Placement               PlacementConfig
 }
 
 type imagePullTemplateConfig struct {
+	NodeType   string
 	NginxImage string
+	Placement  PlacementConfig
+}
+
+type hostCheckerTemplateConfig struct {
+	NodeType             string
+	NginxImage           string
+	PublicNetworkAddress string
+	Placement            PlacementConfig
 }
 
 type clientTemplateConfig struct {
+	NodeType                 string
+	ClientType               string
 	ClientID                 int
 	NetworksAnnotationValue  string
 	NetworkNamesAndAddresses map[string]string
 	NginxImage               string
+	Placement                PlacementConfig
 }
 
 func webServerPodName() string {
@@ -66,46 +83,91 @@ func imagePullAppLabel() string {
 	return "app=multus-validation-test-image-pull"
 }
 
+func hostCheckerAppLabel() string {
+	return "app=multus-validation-test-host-checker"
+}
+
+func getNodeType(m *metav1.ObjectMeta) string {
+	return m.GetLabels()["nodeType"]
+}
+
 func clientAppLabel() string {
 	return "app=multus-validation-test-client"
 }
 
+const (
+	ClientTypeOSD    = "osd"
+	ClientTypeNonOSD = "other"
+)
+
 type daemonsetAppType string
 
 const imagePullDaemonSetAppType = "image pull"
+const hostCheckerDaemonsetAppType = "host checker"
 const clientDaemonSetAppType = "client"
 
-func (vt *ValidationTest) generateWebServerTemplateConfig() webServerTemplateConfig {
+func (vt *ValidationTest) generateWebServerTemplateConfig(placement PlacementConfig) webServerTemplateConfig {
 	return webServerTemplateConfig{
-		NetworksAnnotationValue: vt.generateNetworksAnnotationValue(),
+		NetworksAnnotationValue: vt.generateNetworksAnnotationValue(true, true), // always on both nets
 		NginxImage:              vt.NginxImage,
+		Placement:               placement,
 	}
 }
 
-func (vt *ValidationTest) generateClientTemplateConfig(clientID int, serverPublicAddr, serverClusterAddr string) clientTemplateConfig {
+func (vt *ValidationTest) generateHostCheckerTemplateConfig(
+	serverPublicAddr string,
+	nodeType string,
+	placement PlacementConfig,
+) hostCheckerTemplateConfig {
+	return hostCheckerTemplateConfig{
+		NodeType:             nodeType,
+		PublicNetworkAddress: serverPublicAddr,
+		NginxImage:           vt.NginxImage,
+		Placement:            placement,
+	}
+}
+
+func (vt *ValidationTest) generateClientTemplateConfig(
+	attachPublic, attachCluster bool,
+	serverPublicAddr, serverClusterAddr string,
+	nodeType, clientType string,
+	clientID int,
+	placement PlacementConfig,
+) clientTemplateConfig {
 	netNamesAndAddresses := map[string]string{}
-	if serverPublicAddr != "" {
+	if attachPublic && serverPublicAddr != "" {
 		netNamesAndAddresses["public"] = serverPublicAddr
 	}
-	if serverClusterAddr != "" {
+	if attachCluster && serverClusterAddr != "" {
 		netNamesAndAddresses["cluster"] = serverClusterAddr
 	}
+	for name, addr := range netNamesAndAddresses {
+		if strings.Contains(addr, ":") {
+			// it's an IPv6 address and needs square brackets around it to support :<port> addition
+			netNamesAndAddresses[name] = "[" + addr + "]"
+		}
+	}
 	return clientTemplateConfig{
+		NodeType:                 nodeType,
+		ClientType:               clientType,
 		ClientID:                 clientID,
-		NetworksAnnotationValue:  vt.generateNetworksAnnotationValue(),
+		NetworksAnnotationValue:  vt.generateNetworksAnnotationValue(attachPublic, attachCluster),
 		NetworkNamesAndAddresses: netNamesAndAddresses,
 		NginxImage:               vt.NginxImage,
+		Placement:                placement,
 	}
 }
 
-func (vt *ValidationTest) generateImagePullTemplateConfig() imagePullTemplateConfig {
+func (vt *ValidationTest) generateImagePullTemplateConfig(nodeType string, placement PlacementConfig) imagePullTemplateConfig {
 	return imagePullTemplateConfig{
+		NodeType:   nodeType,
 		NginxImage: vt.NginxImage,
+		Placement:  placement,
 	}
 }
 
-func (vt *ValidationTest) generateWebServerPod() (*core.Pod, error) {
-	t, err := loadTemplate("webServerPod", nginxPodTemplate, vt.generateWebServerTemplateConfig())
+func (vt *ValidationTest) generateWebServerPod(placement PlacementConfig) (*core.Pod, error) {
+	t, err := loadTemplate("webServerPod", nginxPodTemplate, vt.generateWebServerTemplateConfig(placement))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load web server pod template: %w", err)
 	}
@@ -116,11 +178,15 @@ func (vt *ValidationTest) generateWebServerPod() (*core.Pod, error) {
 		return nil, fmt.Errorf("failed to unmarshal web server pod template: %w", err)
 	}
 
+	vt.applyServiceAccountToPodSpec(&p.Spec)
+
 	return &p, nil
 }
 
 func (vt *ValidationTest) generateWebServerConfigMap() (*core.ConfigMap, error) {
-	t, err := loadTemplate("webServerConfigMap", nginxConfigTemplate, vt.generateWebServerTemplateConfig())
+	t, err := loadTemplate("webServerConfigMap", nginxConfigTemplate, vt.generateWebServerTemplateConfig(
+		PlacementConfig{}, // not used for configmap
+	))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load web server configmap template: %w", err)
 	}
@@ -134,8 +200,8 @@ func (vt *ValidationTest) generateWebServerConfigMap() (*core.ConfigMap, error) 
 	return &cm, nil
 }
 
-func (vt *ValidationTest) generateImagePullDaemonSet() (*apps.DaemonSet, error) {
-	t, err := loadTemplate("imagePullDaemonSet", imagePullDaemonSet, vt.generateImagePullTemplateConfig())
+func (vt *ValidationTest) generateImagePullDaemonSet(nodeType string, placement PlacementConfig) (*apps.DaemonSet, error) {
+	t, err := loadTemplate("imagePullDaemonSet", imagePullDaemonSet, vt.generateImagePullTemplateConfig(nodeType, placement))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load image pull daemonset template: %w", err)
 	}
@@ -146,14 +212,40 @@ func (vt *ValidationTest) generateImagePullDaemonSet() (*apps.DaemonSet, error) 
 		return nil, fmt.Errorf("failed to unmarshal image pull daemonset template: %w", err)
 	}
 
+	vt.applyServiceAccountToPodSpec(&d.Spec.Template.Spec)
+
+	return &d, nil
+}
+
+func (vt *ValidationTest) generateHostCheckerDaemonSet(
+	serverPublicAddr string,
+	nodeType string,
+	placement PlacementConfig,
+) (*apps.DaemonSet, error) {
+	t, err := loadTemplate("hostCheckerDaemonSet", hostCheckerDaemonSet, vt.generateHostCheckerTemplateConfig(serverPublicAddr, nodeType, placement))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load host checker daemonset template: %w", err)
+	}
+
+	var d apps.DaemonSet
+	err = yaml.Unmarshal(t, &d)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal host checker daemonset template: %w", err)
+	}
+
+	vt.applyServiceAccountToPodSpec(&d.Spec.Template.Spec)
+
 	return &d, nil
 }
 
 func (vt *ValidationTest) generateClientDaemonSet(
-	clientID int,
+	attachPublic, attachCluster bool,
 	serverPublicAddr, serverClusterAddr string,
+	nodeType, clientType string,
+	clientID int,
+	placement PlacementConfig,
 ) (*apps.DaemonSet, error) {
-	t, err := loadTemplate("clientDaemonSet", clientDaemonSet, vt.generateClientTemplateConfig(clientID, serverPublicAddr, serverClusterAddr))
+	t, err := loadTemplate("clientDaemonSet", clientDaemonSet, vt.generateClientTemplateConfig(attachPublic, attachCluster, serverPublicAddr, serverClusterAddr, nodeType, clientType, clientID, placement))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load client daemonset template: %w", err)
 	}
@@ -164,18 +256,26 @@ func (vt *ValidationTest) generateClientDaemonSet(
 		return nil, fmt.Errorf("failed to unmarshal client daemonset template: %w", err)
 	}
 
+	vt.applyServiceAccountToPodSpec(&d.Spec.Template.Spec)
+
 	return &d, nil
 }
 
-func (vt *ValidationTest) generateNetworksAnnotationValue() string {
+func (vt *ValidationTest) generateNetworksAnnotationValue(public, cluster bool) string {
 	nets := []string{}
-	if vt.PublicNetwork != "" {
+	if public && vt.PublicNetwork != "" {
 		nets = append(nets, vt.PublicNetwork)
 	}
-	if vt.ClusterNetwork != "" {
+	if cluster && vt.ClusterNetwork != "" {
 		nets = append(nets, vt.ClusterNetwork)
 	}
 	return strings.Join(nets, ",")
+}
+
+func (vt *ValidationTest) applyServiceAccountToPodSpec(ps *core.PodSpec) {
+	if vt.ServiceAccountName != "" {
+		ps.ServiceAccountName = vt.ServiceAccountName
+	}
 }
 
 func loadTemplate(name, templateFileText string, config interface{}) ([]byte, error) {

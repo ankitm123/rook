@@ -22,7 +22,6 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/pkg/errors"
 	cephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
@@ -62,35 +61,41 @@ const (
 	// DmcryptMetadataType is a portion of the device mapper name for the encrypted OSD on PVC block
 	DmcryptMetadataType = "db-dmcrypt"
 	// DmcryptWalType is a portion of the device mapper name for the encrypted OSD on PVC wal
-	DmcryptWalType            = "wal-dmcrypt"
-	bluestoreBlockName        = "block"
-	bluestoreMetadataName     = "block.db"
-	bluestoreWalName          = "block.wal"
-	tempEtcCephDir            = "/etc/temp-ceph"
-	osdPortv1                 = 6801
-	osdPortv2                 = 6800
-	defaultOSDRestartInterval = 24
+	DmcryptWalType        = "wal-dmcrypt"
+	bluestoreBlockName    = "block"
+	bluestoreMetadataName = "block.db"
+	bluestoreWalName      = "block.wal"
+	osdPortv1             = 6801
+	osdPortv2             = 6800
 )
 
 const (
 	cephOSDStart = `
+set -o nounset # fail if variables are unset
+child_pid=""
+sigterm_received=false
 function sigterm() {
 	echo "SIGTERM received"
-	exit
+	sigterm_received=true
+	kill -TERM "$child_pid"
 }
-
 trap sigterm SIGTERM
-
-%s %s & wait
-
-RESTART_INTERVAL=%d
-rc=$?
-if [ $rc -eq 0 ]; then
+"${@}" &
+# un-fixable race condition: if receive sigterm here, it won't be sent to child process
+child_pid="$!"
+wait "$child_pid" # wait returns the same return code of child process when called with argument
+wait "$child_pid" # first wait returns immediately upon SIGTERM, so wait again for child to actually stop; this is a noop if child exited normally
+ceph_osd_rc=$?
+if [ $ceph_osd_rc -eq 0 ] && ! $sigterm_received; then
 	touch /tmp/osd-sleep
-	echo "OSD daemon exited with code 0, possibly due to OSD flapping. The OSD pod will sleep for $RESTART_INTERVAL hours. Restart the pod manually once the flapping issue is fixed"
-	sleep "$RESTART_INTERVAL"h & wait
-	exit $rc
-fi`
+	echo "OSD daemon exited with code 0, possibly due to OSD flapping. The OSD pod will sleep for $ROOK_OSD_RESTART_INTERVAL hours. Restart the pod manually once the flapping issue is fixed"
+	sleep "$ROOK_OSD_RESTART_INTERVAL"h &
+	child_pid="$!"
+	wait "$child_pid"
+	wait "$child_pid" # wait again for sleep to stop
+fi
+exit $ceph_osd_rc
+`
 
 	activateOSDOnNodeCode = `
 set -o errexit
@@ -99,38 +104,45 @@ set -o nounset # fail if variables are unset
 set -o xtrace
 
 OSD_ID="$ROOK_OSD_ID"
-CEPH_FSID=%s
 OSD_UUID=%s
 OSD_STORE_FLAG="%s"
 OSD_DATA_DIR=/var/lib/ceph/osd/ceph-"$OSD_ID"
+KEYRING_FILE="$OSD_DATA_DIR"/keyring
 CV_MODE=%s
 DEVICE="$%s"
 
-# "ceph.conf" must have the "fsid" global configuration to activate encrypted OSDs
-# after the following Ceph's PR is merged.
-# https://github.com/ceph/ceph/commit/25655e5a8829e001adf467511a6bde8142b0a575
-# This limitation will be removed later. After that, we can remove this
-# fsid injection code. Probably a good time is when to remove Quincy support.
-# https://github.com/rook/rook/pull/10333#discussion_r892817877
-cp --no-preserve=mode /etc/temp-ceph/ceph.conf /etc/ceph/ceph.conf
-python3 -c "
+# In rare cases keyring file created with prepare-osd but did not
+# being stored in ceph auth system therefore we need to import it
+# from keyring file instead of creating new one
+if ! ceph -n client.admin auth get osd."$OSD_ID" -k /etc/ceph/admin-keyring-store/keyring; then
+    if [ -f "$KEYRING_FILE" ]; then
+        # import keyring from existing file
+        TMP_DIR=$(mktemp -d)
+
+        python3 -c "
 import configparser
 
 config = configparser.ConfigParser()
-config.read('/etc/ceph/ceph.conf')
+config.read('$KEYRING_FILE')
 
-if not config.has_section('global'):
-    config['global'] = {}
+if not config.has_section('osd.$OSD_ID'):
+    exit()
 
-if not config.has_option('global','fsid'):
-    config['global']['fsid'] = '$CEPH_FSID'
+config['osd.$OSD_ID'] = {'key': config['osd.$OSD_ID']['key'], 'caps mon': '\"allow profile osd\"', 'caps mgr': '\"allow profile osd\"', 'caps osd': '\"allow *\"'}
 
-with open('/etc/ceph/ceph.conf', 'w') as configfile:
+with open('$TMP_DIR/keyring', 'w') as configfile:
     config.write(configfile)
 "
 
-# create new keyring
-ceph -n client.admin auth get-or-create osd."$OSD_ID" mon 'allow profile osd' mgr 'allow profile osd' osd 'allow *' -k /etc/ceph/admin-keyring-store/keyring
+        cat "$TMP_DIR"/keyring
+        ceph -n client.admin auth import -i "$TMP_DIR"/keyring -k /etc/ceph/admin-keyring-store/keyring
+
+        rm --recursive --force "$TMP_DIR"
+    else
+        # create new keyring if no keyring file found
+        ceph -n client.admin auth get-or-create osd."$OSD_ID" mon 'allow profile osd' mgr 'allow profile osd' osd 'allow *' -k /etc/ceph/admin-keyring-store/keyring
+    fi
+fi
 
 # active the osd with ceph-volume
 if [[ "$CV_MODE" == "lvm" ]]; then
@@ -177,7 +189,10 @@ sys.exit('no disk found with OSD ID $OSD_ID')
 "
 	}
 
-	ceph-volume raw list "$DEVICE" > "$OSD_LIST"
+	if ! ceph-volume raw list "$DEVICE" > "$OSD_LIST"; then
+		# if the command fails, the disk may be renamed
+		echo '' > "$OSD_LIST"
+	fi
 	cat "$OSD_LIST"
 
 	if ! find_device < "$OSD_LIST"; then
@@ -218,7 +233,6 @@ dmsetup version
 function open_encrypted_block {
 	echo "Opening encrypted device $BLOCK_PATH at $DM_PATH"
 	cryptsetup luksOpen --verbose --disable-keyring --allow-discards --key-file "$KEY_FILE_PATH" "$BLOCK_PATH" "$DM_NAME"
-	rm -f "$KEY_FILE_PATH"
 }
 
 # This is done for upgraded clusters that did not have the subsystem and label set by the prepare job
@@ -311,7 +325,7 @@ func deploymentName(osdID int) string {
 	return fmt.Sprintf(osdAppNameFmt, osdID)
 }
 
-func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionConfig *provisionConfig) (*apps.Deployment, error) {
+func (c *Cluster) makeDeployment(osdProps osdProperties, osd *OSDInfo, provisionConfig *provisionConfig) (*apps.Deployment, error) {
 	deploymentName := deploymentName(osd.ID)
 	replicaCount := int32(1)
 	volumeMounts := controller.CephVolumeMounts(provisionConfig.DataPathMap, false)
@@ -329,6 +343,11 @@ func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionC
 	// This property is used for both PVC and non-PVC use case
 	if osd.CVMode == "" {
 		return nil, errors.Errorf("failed to generate deployment for OSD %d. required CVMode is not specified for this OSD", osd.ID)
+	}
+
+	if c.spec.Storage.AllowDeviceClassUpdate && osdProps.storeConfig.DeviceClass != "" && osdProps.storeConfig.DeviceClass != osd.DeviceClass {
+		logger.Infof("The device class for osd %d is changing from %q to %q", osd.ID, osd.DeviceClass, osdProps.storeConfig.DeviceClass)
+		osd.DeviceClass = osdProps.storeConfig.DeviceClass
 	}
 
 	dataDir := k8sutil.DataDir
@@ -371,6 +390,7 @@ func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionC
 	envVars := c.getConfigEnvVars(osdProps, dataDir, false)
 	envVars = append(envVars, k8sutil.ClusterDaemonEnvVars(c.spec.CephVersion.Image)...)
 	envVars = append(envVars, []v1.EnvVar{
+		{Name: "ROOK_OSD_RESTART_INTERVAL", Value: strconv.Itoa(c.spec.Storage.FlappingRestartIntervalHours)},
 		{Name: "ROOK_OSD_UUID", Value: osd.UUID},
 		{Name: "ROOK_OSD_ID", Value: osdID},
 		{Name: "ROOK_CEPH_MON_HOST",
@@ -421,7 +441,7 @@ func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionC
 		"--fsid", c.clusterInfo.FSID,
 		"--setuser", "ceph",
 		"--setgroup", "ceph",
-		fmt.Sprintf("--crush-location=%q", osd.Location),
+		fmt.Sprintf("--crush-location=%s", osd.Location),
 	}...)
 
 	// Ceph expects initial weight as float value in tera-bytes units
@@ -493,15 +513,21 @@ func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionC
 		Privileged:             &privileged,
 		RunAsUser:              &runAsUser,
 		ReadOnlyRootFilesystem: &readOnlyRootFilesystem,
+		Capabilities: &v1.Capabilities{
+			Add: []v1.Capability{},
+			Drop: []v1.Capability{
+				"NET_RAW",
+			},
+		},
 	}
 
 	// needed for luksOpen synchronization when devices are encrypted and the osd is prepared with LVM
 	hostIPC := osdProps.storeConfig.EncryptedDevice || osdProps.encrypted
 
-	osdLabels := c.getOSDLabels(osd, failureDomainValue, osdProps.portable)
+	osdLabels := c.getOSDLabels(*osd, failureDomainValue, osdProps.portable)
 
 	if osd.ExportService {
-		osdService, err := c.createOSDService(osd, osdLabels)
+		osdService, err := c.createOSDService(*osd, osdLabels)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to configure osd service for osd.%d", osd.ID)
 		}
@@ -549,6 +575,13 @@ func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionC
 	if osdProps.onPVC() {
 		if osd.CVMode == "lvm" {
 			initContainers = append(initContainers, c.getPVCInitContainer(osdProps))
+
+			// This is a deprecated OSD and should be replaced for future supportability
+			if c.deprecatedOSDs == nil {
+				c.deprecatedOSDs = make(map[string][]int)
+			}
+			reason := "LVM-based OSDs on a PVC are deprecated, see documentation on replacing OSDs"
+			c.deprecatedOSDs[reason] = append(c.deprecatedOSDs[reason], osd.ID)
 		} else {
 			// Raw mode on PVC needs this path so that OSD's metadata files can be chown after 'ceph-bluestore-tool' ran
 			dataPath = activateOSDMountPath + osdID
@@ -574,18 +607,19 @@ func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionC
 				initContainers = append(initContainers, c.getExpandEncryptedPVCInitContainer(osdDataDirPath, osdProps))
 			}
 			initContainers = append(initContainers, c.getActivatePVCInitContainer(osdProps, osdID))
+			// The expand init container fails for legacy LVM-based OSDs, so only supported expansion for raw mode OSDs
+			initContainers = append(initContainers, c.getExpandPVCInitContainer(osdProps, osdID))
 		}
-		initContainers = append(initContainers, c.getExpandPVCInitContainer(osdProps, osdID))
 	} else {
 		// Add the volume to the spec and the mount to the daemon container
 		// so that it can pick the already mounted/activated osd metadata path
-		// This container will activate the OSD and place the activated filesinto an empty dir
+		// This container will activate the OSD and place the activated files into an empty dir
 		// The empty dir will be shared by the "activate-osd" pod and the "osd" main pod
-		activateOSDVolume, activateOSDContainer := c.getActivateOSDInitContainer(c.spec.DataDirHostPath, c.clusterInfo.Namespace, osdID, osd, osdProps)
+		activateOSDVolume, activateOSDContainer := c.getActivateOSDInitContainer(c.spec.DataDirHostPath, c.clusterInfo.Namespace, osdID, *osd, osdProps)
 		volumes = append(volumes, activateOSDVolume...)
 		volumeMounts = append(volumeMounts, activateOSDContainer.VolumeMounts[0])
 		initContainers = append(initContainers, *activateOSDContainer)
-		initContainers = append(initContainers, c.getExpandInitContainer(osdProps, c.spec.DataDirHostPath, c.clusterInfo.Namespace, osdID, osd))
+		initContainers = append(initContainers, c.getExpandInitContainer(osdProps, c.spec.DataDirHostPath, c.clusterInfo.Namespace, osdID, *osd))
 	}
 
 	// Doing a chown in a post start lifecycle hook does not reliably complete before the OSD
@@ -619,7 +653,8 @@ func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionC
 			InitContainers:     initContainers,
 			Containers: []v1.Container{
 				{
-					Command:         osdStartScript(command, args, c.spec.Storage.FlappingRestartIntervalHours),
+					Command:         getOSDCmd(command, c.spec.Storage.FlappingRestartIntervalHours),
+					Args:            args,
 					Name:            "osd",
 					Image:           c.spec.CephVersion.Image,
 					ImagePullPolicy: controller.GetContainerImagePullPolicy(c.spec.CephVersion.ImagePullPolicy),
@@ -633,8 +668,9 @@ func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionC
 					WorkingDir:      opconfig.VarLogCephDir,
 				},
 			},
-			Volumes:       volumes,
-			SchedulerName: osdProps.schedulerName,
+			Volumes:         volumes,
+			SecurityContext: &v1.PodSecurityContext{},
+			SchedulerName:   osdProps.schedulerName,
 		},
 	}
 
@@ -690,6 +726,7 @@ func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionC
 					OsdIdLabelKey:       fmt.Sprintf("%d", osd.ID),
 				},
 			},
+			RevisionHistoryLimit: controller.RevisionHistoryLimit(),
 			Strategy: apps.DeploymentStrategy{
 				Type: apps.RecreateDeploymentStrategyType,
 			},
@@ -716,11 +753,11 @@ func (c *Cluster) makeDeployment(osdProps osdProperties, osd OSDInfo, provisionC
 	}
 	if osdProps.portable {
 		// portable OSDs must have affinity to the topology where the osd prepare job was executed
-		if err := applyTopologyAffinity(&deployment.Spec.Template.Spec, osd); err != nil {
+		if err := applyTopologyAffinity(&deployment.Spec.Template.Spec, *osd); err != nil {
 			return nil, err
 		}
 	} else {
-		deployment.Spec.Template.Spec.NodeSelector = map[string]string{v1.LabelHostname: osdProps.crushHostname}
+		deployment.Spec.Template.Spec.NodeSelector = map[string]string{k8sutil.LabelHostname(): osdProps.crushHostname}
 	}
 	k8sutil.AddRookVersionLabelToDeployment(deployment)
 	cephv1.GetOSDAnnotations(c.spec.Annotations).ApplyToObjectMeta(&deployment.ObjectMeta)
@@ -867,10 +904,13 @@ func (c *Cluster) getActivateOSDInitContainer(configDir, namespace, osdID string
 
 	adminKeyringVol, adminKeyringVolMount := cephkey.Volume().Admin(), cephkey.VolumeMount().Admin()
 	volume = append(volume, adminKeyringVol)
+	udevVolume := v1.Volume{Name: "udev", VolumeSource: v1.VolumeSource{HostPath: &v1.HostPathVolumeSource{Path: "/run/udev"}}}
+	volume = append(volume, udevVolume)
 	volMounts := []v1.VolumeMount{
 		{Name: activateOSDVolumeName, MountPath: activateOSDMountPathID},
 		{Name: "devices", MountPath: "/dev"},
-		{Name: k8sutil.ConfigOverrideName, ReadOnly: true, MountPath: tempEtcCephDir},
+		{Name: k8sutil.ConfigOverrideName, ReadOnly: true, MountPath: opconfig.EtcCephDir},
+		{Name: "udev", MountPath: "/run/udev"},
 		adminKeyringVolMount,
 	}
 
@@ -884,7 +924,7 @@ func (c *Cluster) getActivateOSDInitContainer(configDir, namespace, osdID string
 		Command: []string{
 			"/bin/bash",
 			"-c",
-			fmt.Sprintf(activateOSDOnNodeCode, c.clusterInfo.FSID, osdInfo.UUID, osdStoreFlag, osdInfo.CVMode, blockPathVarName),
+			fmt.Sprintf(activateOSDOnNodeCode, osdInfo.UUID, osdStoreFlag, osdInfo.CVMode, blockPathVarName),
 		},
 		Name:            "activate",
 		Image:           c.spec.CephVersion.Image,
@@ -909,6 +949,9 @@ func getBlockDevMapperContext() *v1.SecurityContext {
 		Capabilities: &v1.Capabilities{
 			Add: []v1.Capability{
 				"MKNOD",
+			},
+			Drop: []v1.Capability{
+				"NET_RAW",
 			},
 		},
 		Privileged: &privileged,
@@ -1417,16 +1460,9 @@ func (c *Cluster) getOSDServicePorts() []v1.ServicePort {
 	return ports
 }
 
-func osdStartScript(cmd, args []string, interval int) []string {
-	osdRestartInterval := defaultOSDRestartInterval
+func getOSDCmd(cmd []string, interval int) []string {
 	if interval != 0 {
-		osdRestartInterval = interval
+		return append([]string{"bash", "-x", "-c", cephOSDStart, "--"}, cmd...)
 	}
-
-	return []string{
-		"/bin/bash",
-		"-c",
-		"-x",
-		fmt.Sprintf(cephOSDStart, strings.Join(cmd, " "), strings.Join(args, " "), osdRestartInterval),
-	}
+	return cmd
 }

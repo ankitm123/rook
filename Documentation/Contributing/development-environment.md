@@ -58,3 +58,43 @@ Use [helm.sh](https://github.com/rook/rook/blob/master/tests/scripts/helm.sh) to
 
 !!! note
     If Helm is not available in your `PATH`, Helm will be downloaded to a temporary directory (`/tmp/rook-tests-scripts-helm`) and used from that directory.
+
+
+## Using local Rook image on minikube cluster
+
+Developers can test quickly their changes by building and using the local Rook image
+on their minikube cluster.
+
+1) Set the local Docker environment to use minikube:
+
+    ```console
+    eval $(minikube docker-env -p minikube)
+    ```
+
+2) Build your local Rook image. The following command will generate a Rook image
+labeled in the format `local/ceph-<arch>`.
+
+    ```console
+    cd <your_rook_src_directory>
+    make BUILD_REGISTRY=local
+    ```
+
+3) Tag the generated image as `rook/ceph:master` so operator will pick it.
+
+    ```console
+    docker tag "local/ceph-$(go env GOARCH)" 'rook/ceph:master'
+    ```
+
+4) Create a Rook cluster in minikube, or if the Rook cluster is already configured, apply the new
+operator image by restarting the operator.
+
+
+## Creating a dev cluster
+
+To accelerate the development process, users have the option to employ the script located
+at `tests/scripts/create-dev-cluster.sh`. This script is designed to rapidly set
+up a new minikube environment, apply the CRDs and the common file, and then utilize the
+`cluster-test.yaml` script to create the Rook cluster. Once setup, users can use the different `*-test.yaml`
+files from the `deploy/examples/` directory to configure their clusters. This script supports
+the possibility of creating multiple rook clusters running on the same machine by using the option
+`-p <profile-name>`.

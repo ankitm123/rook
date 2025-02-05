@@ -10,6 +10,7 @@ The Ceph COSI driver provisions buckets for object storage. This document instru
 ## Prerequisites
 
 COSI requires:
+
 1. A running Rook [object store](object-storage.md)
 2. [COSI controller](https://github.com/kubernetes-sigs/container-object-storage-interface-controller#readme)
 
@@ -32,6 +33,20 @@ metadata:
   namespace: rook-ceph
 spec:
   deploymentStrategy: "Auto"
+---
+# The Ceph-COSI driver needs a privileged user for each CephObjectStore
+# in order to provision buckets and users
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStoreUser
+metadata:
+  name: cosi
+  namespace: rook-ceph # rook operator namespace
+spec:
+  displayName: "cosi user"
+  store: my-store # name of the CephObjectStore
+  capabilities:
+    bucket: "*"
+    user: "*"
 ```
 
 ```console
@@ -39,33 +54,7 @@ cd deploy/examples/cosi
 kubectl create -f cephcosidriver.yaml
 ```
 
-The driver is created in the same namespace as Rook operator.
-
 ## Admin Operations
-
-### Create a Ceph Object Store User
-
-Create a CephObjectStoreUser to be used by the COSI driver for provisioning buckets.
-
-```yaml
-apiVersion: ceph.rook.io/v1
-kind: CephObjectStoreUser
-metadata:
-  name: cosi
-  namespace: rook-ceph
-spec:
-  displayName: "cosi user"
-  store: my-store
-  capabilities:
-    bucket: "*"
-    user: "*"
-```
-
-```console
-kubectl create -f cosi-user.yaml
-```
-
-Above step will be automated in future by the Rook operator.
 
 ### Create a BucketClass and BucketAccessClass
 
@@ -76,17 +65,19 @@ kind: BucketClass
 apiVersion: objectstorage.k8s.io/v1alpha1
 metadata:
   name: sample-bcc
-driverName: ceph.objectstorage.k8s.io
+driverName: rook-ceph.ceph.objectstorage.k8s.io
 deletionPolicy: Delete
 parameters:
   objectStoreUserSecretName: rook-ceph-object-user-my-store-cosi
   objectStoreUserSecretNamespace: rook-ceph
----
+```
+
+```yaml
 kind: BucketAccessClass
 apiVersion: objectstorage.k8s.io/v1alpha1
 metadata:
   name: sample-bac
-driverName: ceph.objectstorage.k8s.io
+driverName: rook-ceph.ceph.objectstorage.k8s.io
 authenticationType: KEY
 parameters:
   objectStoreUserSecretName: rook-ceph-object-user-my-store-cosi
@@ -146,7 +137,7 @@ kubectl create -f bucketaccess.yaml
 The secret will be created which contains the access details for the bucket in JSON format in the namespace of BucketAccess:
 
 ``` console
-kubectl get secret sample-secret-name -o yaml
+kubectl get secret sample-secret-name -o jsonpath='{.data.BucketInfo}' | base64 -d
 ```
 
 ```json
@@ -191,51 +182,3 @@ To access the bucket from an application pod, mount the secret for accessing the
 ```
 
 The Secret will be mounted in the pod in the path: `/data/cosi/BucketInfo`. The app must parse the JSON object to load the bucket connection details.
-
-Another approach is the json data can be parsed by the application to access the bucket via init container. Following is a sample init container which parses the json data and creates a file with the access details:
-
-``` bash
-set -e
-
-jsonfile=%s
-
-if [ -d "$jsonfile" ]; then
-    export ENDPOINT=$(jq -r '.spec.secretS3.endpoint' $jsonfile)
-    export BUCKET=$(jq -r '.spec.bucketName' $jsonfile)
-    export AWS_ACCESS_KEY_ID=$(jq -r '.spec.secretS3.accessKeyID' $jsonfile)
-    export AWS_SECRET_ACCESS_KEY=$(jq -r '.spec.secretS3.accessSecretKey' $jsonfile)
-fi
-else
-    echo "Error: $jsonfile does not exist"
-    exit 1
-fi
-
-```
-
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: sample-app
-  namespace: rook-ceph
-spec:
-  containers:
-  - name: sample-app
-    image: busybox
-    command: ["/bin/sh", "-c", "sleep 3600"]
-    volumeMounts:
-    - name: cosi-secrets
-      mountPath: /data/cosi
-  initContainers:
-  - name: init-cosi
-    image: busybox
-    command: ["/bin/sh", "-c", "setup-aws-credentials /data/cosi/BucketInfo/credentials"]
-    volumeMounts:
-    - name: cosi-secrets
-      mountPath: /data/cosi
-  volumes:
-  - name: cosi-secrets
-    secret:
-      #  Set the name of the secret from the BucketAccess
-      secretName: sample-secret-name
-```

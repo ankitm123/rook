@@ -68,15 +68,16 @@ var controllerTypeMeta = metav1.TypeMeta{
 
 // ReconcileObjectStoreUser reconciles a ObjectStoreUser object
 type ReconcileObjectStoreUser struct {
-	client           client.Client
-	scheme           *runtime.Scheme
-	context          *clusterd.Context
-	objContext       *object.AdminOpsContext
-	userConfig       *admin.User
-	cephClusterSpec  *cephv1.ClusterSpec
-	clusterInfo      *cephclient.ClusterInfo
-	opManagerContext context.Context
-	recorder         record.EventRecorder
+	client            client.Client
+	scheme            *runtime.Scheme
+	context           *clusterd.Context
+	objContext        *object.AdminOpsContext
+	advertiseEndpoint string
+	userConfig        *admin.User
+	cephClusterSpec   *cephv1.ClusterSpec
+	clusterInfo       *cephclient.ClusterInfo
+	opManagerContext  context.Context
+	recorder          record.EventRecorder
 }
 
 // Add creates a new CephObjectStoreUser Controller and adds it to the Manager. The Manager will set fields on the Controller
@@ -105,20 +106,21 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	logger.Info("successfully started")
 
 	// Watch for changes on the CephObjectStoreUser CRD object
-	err = c.Watch(source.Kind(mgr.GetCache(), &cephv1.CephObjectStoreUser{TypeMeta: controllerTypeMeta}), &handler.EnqueueRequestForObject{}, opcontroller.WatchControllerPredicate())
+	err = c.Watch(source.Kind[client.Object](mgr.GetCache(), &cephv1.CephObjectStoreUser{TypeMeta: controllerTypeMeta}, &handler.EnqueueRequestForObject{}, opcontroller.WatchControllerPredicate()))
 	if err != nil {
 		return err
 	}
 
 	// Watch secrets
-	secretSource := source.Kind(mgr.GetCache(), &corev1.Secret{TypeMeta: metav1.TypeMeta{Kind: "Secret", APIVersion: corev1.SchemeGroupVersion.String()}})
 	ownerRequest := handler.EnqueueRequestForOwner(
 		mgr.GetScheme(),
 		mgr.GetRESTMapper(),
 		&cephv1.CephObjectStoreUser{},
 	)
-	err = c.Watch(secretSource, ownerRequest,
-		opcontroller.WatchPredicateForNonCRDObject(&cephv1.CephObjectStoreUser{TypeMeta: controllerTypeMeta}, mgr.GetScheme()))
+	secretSource := source.Kind[client.Object](mgr.GetCache(), &corev1.Secret{TypeMeta: metav1.TypeMeta{Kind: "Secret", APIVersion: corev1.SchemeGroupVersion.String()}}, ownerRequest,
+		opcontroller.WatchPredicateForNonCRDObject(&cephv1.CephObjectStoreUser{TypeMeta: controllerTypeMeta}, mgr.GetScheme()),
+	)
+	err = c.Watch(secretSource)
 	if err != nil {
 		return err
 	}
@@ -364,7 +366,7 @@ func (r *ReconcileObjectStoreUser) createOrUpdateCephUser(u *cephv1.CephObjectSt
 	}
 
 	// Set access and secret key
-	if r.userConfig.Keys == nil {
+	if len(r.userConfig.Keys) == 0 {
 		r.userConfig.Keys = make([]admin.UserKeySpec, 1)
 	}
 	r.userConfig.Keys[0].AccessKey = user.Keys[0].AccessKey
@@ -394,6 +396,12 @@ func (r *ReconcileObjectStoreUser) initializeObjectStoreContext(u *cephv1.CephOb
 				u.Namespace)
 		}
 	}
+
+	advertiseEndpoint, err := store.GetAdvertiseEndpointUrl()
+	if err != nil {
+		return errors.Wrapf(err, "failed to get CephObjectStore %q advertise endpoint for object store user", u.Spec.Store)
+	}
+	r.advertiseEndpoint = advertiseEndpoint
 
 	objContext, err := object.NewMultisiteContext(r.context, r.clusterInfo, store)
 	if err != nil {
@@ -439,6 +447,7 @@ func generateUserConfig(user *cephv1.CephObjectStoreUser) admin.User {
 	userConfig := admin.User{
 		ID:          user.Name,
 		DisplayName: displayName,
+		Keys:        make([]admin.UserKeySpec, 0),
 	}
 
 	defaultMaxBuckets := 1000

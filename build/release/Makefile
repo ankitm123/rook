@@ -70,6 +70,7 @@ DOCKER_REGISTRY ?= rook
 REGISTRIES ?= $(DOCKER_REGISTRY)
 IMAGE_ARCHS := $(subst linux_,,$(filter linux_%,$(PLATFORMS)))
 IMAGE_PLATFORMS := $(subst _,/,$(subst $(SPACE),$(COMMA),$(filter linux_%,$(PLATFORMS))))
+IMAGE_PLATFORMS_COMMA := $(shell echo "$(IMAGE_PLATFORMS)" | sed 's/ /,/g' | sed 's/.$$//')
 
 S3_BUCKET ?= rook.releases
 S3_CP := aws s3 cp --only-show-errors
@@ -137,7 +138,7 @@ publish.docs:
 	if test "$$GITHUB_ACTIONS" = "true"; then git config --unset 'http.https://github.com/.extraheader'; fi
 	git fetch -u docs gh-pages
 	# Switch to root of repo and then run the build and deploy of the documentation
-	cd $(ROOT_DIR) && mike deploy --remote docs --push --rebase --branch gh-pages --update-aliases --prefix $(DOCS_PREFIX) $(DOCS_VERSION) $(DOCS_VERSION_ALIAS)
+	cd $(ROOT_DIR) && mike deploy --remote docs --push --branch gh-pages --update-aliases --deploy-prefix $(DOCS_PREFIX) $(DOCS_VERSION) $(DOCS_VERSION_ALIAS)
 
 # ====================================================================================
 # helm
@@ -189,11 +190,11 @@ endef
 $(foreach r,$(REGISTRIES), $(foreach i,$(IMAGES), $(foreach a,$(IMAGE_ARCHS),$(eval $(call repo.targets,$(r),$(i),$(a))))))
 
 publish.manifest.image.%: publish.all.images $(MANIFEST_TOOL)
-	$(MANIFEST_TOOL) push from-args --platforms $(IMAGE_PLATFORMS) --template $(DOCKER_REGISTRY)/$*-ARCH:$(VERSION) --target $(DOCKER_REGISTRY)/$*:$(VERSION)
+	$(MANIFEST_TOOL) push from-args --platforms $(IMAGE_PLATFORMS_COMMA) --template $(DOCKER_REGISTRY)/$*-ARCH:$(VERSION) --target $(DOCKER_REGISTRY)/$*:$(VERSION)
 
 # add the "master" tag to the master image, but do not add the "release" tag for the release channel
 promote.manifest.image.%: promote.all.images $(MANIFEST_TOOL)
-	[ "$(CHANNEL)" = "release" ] || $(MANIFEST_TOOL) push from-args --platforms $(IMAGE_PLATFORMS) --template $(DOCKER_REGISTRY)/$*-ARCH:$(VERSION) --target $(DOCKER_REGISTRY)/$*:$(CHANNEL)
+	[ "$(CHANNEL)" = "release" ] || $(MANIFEST_TOOL) push from-args --platforms $(IMAGE_PLATFORMS_COMMA) --template $(DOCKER_REGISTRY)/$*-ARCH:$(VERSION) --target $(DOCKER_REGISTRY)/$*:$(CHANNEL)
 
 build.images: build.all.images
 publish.images: $(addprefix publish.manifest.image.,$(IMAGES))
@@ -216,7 +217,7 @@ help:
 	@echo ''
 	@echo 'Options:'
 	@echo '    VERSION      Sets the release version.'
-	@echo '    BRANCH_NAME  Name of the branch we're releasing from.'
+	@echo '    BRANCH_NAME  Name of the branch we are releasing from.'
 	@echo '    CHANNEL      Sets the release channel. Can be set to master,'
 	@echo '                 or release. Default is not set.'
 	@echo '    PLATFORMS    The supported platforms to build when running.'

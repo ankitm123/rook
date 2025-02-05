@@ -71,10 +71,18 @@ func TestPodContainer(t *testing.T) {
 }
 
 func TestDaemonset(t *testing.T) {
-	testPodDevices(t, "", "sda", true)
-	testPodDevices(t, "/var/lib/mydatadir", "sdb", false)
-	testPodDevices(t, "", "", true)
-	testPodDevices(t, "", "", false)
+	t.Run(("device name and all devices"), func(t *testing.T) {
+		testPodDevices(t, "", "sda", true)
+	})
+	t.Run(("data dir and device name"), func(t *testing.T) {
+		testPodDevices(t, "/var/lib/mydatadir", "sdb", false)
+	})
+	t.Run(("all devices"), func(t *testing.T) {
+		testPodDevices(t, "", "", true)
+	})
+	t.Run(("no data dir and device name"), func(t *testing.T) {
+		testPodDevices(t, "", "", false)
+	})
 }
 
 func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
@@ -85,7 +93,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	clientset := fake.NewSimpleClientset()
 	clusterInfo := &cephclient.ClusterInfo{
 		Namespace:   "ns",
-		CephVersion: cephver.Quincy,
+		CephVersion: cephver.Squid,
 	}
 	clusterInfo.SetName("test")
 	clusterInfo.OwnerInfo = cephclient.NewMinimumOwnerInfo(t)
@@ -114,7 +122,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	if len(devices) == 0 && len(dataDir) == 0 {
 		return
 	}
-	osd := OSDInfo{
+	osd := &OSDInfo{
 		ID:     0,
 		CVMode: "raw",
 	}
@@ -143,10 +151,10 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	assert.Equal(t, corev1.RestartPolicyAlways, deployment.Spec.Template.Spec.RestartPolicy)
 	assert.Equal(t, "my-priority-class", deployment.Spec.Template.Spec.PriorityClassName)
 	if devMountNeeded && len(dataDir) > 0 {
-		assert.Equal(t, 9, len(deployment.Spec.Template.Spec.Volumes))
+		assert.Equal(t, 10, len(deployment.Spec.Template.Spec.Volumes))
 	}
 	if devMountNeeded && len(dataDir) == 0 {
-		assert.Equal(t, 9, len(deployment.Spec.Template.Spec.Volumes))
+		assert.Equal(t, 10, len(deployment.Spec.Template.Spec.Volumes))
 	}
 	if !devMountNeeded && len(dataDir) > 0 {
 		assert.Equal(t, 1, len(deployment.Spec.Template.Spec.Volumes))
@@ -164,7 +172,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	initCont := deployment.Spec.Template.Spec.InitContainers[0]
 	assert.Equal(t, "quay.io/ceph/ceph:v15", initCont.Image)
 	assert.Equal(t, "activate", initCont.Name)
-	assert.Equal(t, 4, len(initCont.VolumeMounts))
+	assert.Equal(t, 5, len(initCont.VolumeMounts))
 	initCont = deployment.Spec.Template.Spec.InitContainers[1]
 	assert.Equal(t, "quay.io/ceph/ceph:v15", initCont.Image)
 	assert.Equal(t, "expand-bluefs", initCont.Name)
@@ -178,6 +186,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	cont := deployment.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, spec.CephVersion.Image, cont.Image)
 	assert.Equal(t, 8, len(cont.VolumeMounts))
+	assert.Equal(t, "ceph-osd", cont.Command[0])
 	verifyEnvVar(t, cont.Env, "TCMALLOC_MAX_TOTAL_THREAD_CACHE_BYTES", "134217728", true)
 
 	// Test OSD on PVC with LVM
@@ -189,7 +198,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 		pvc:           corev1.PersistentVolumeClaimVolumeSource{ClaimName: "mypvc"},
 	}
 	// Not needed when running on PVC
-	osd = OSDInfo{
+	osd = &OSDInfo{
 		ID:     0,
 		CVMode: "lvm",
 	}
@@ -197,12 +206,11 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	deployment, err = c.makeDeployment(osdProp, osd, dataPathMap)
 	assert.Nil(t, err)
 	assert.NotNil(t, deployment)
-	assert.Equal(t, 5, len(deployment.Spec.Template.Spec.InitContainers), deployment.Spec.Template.Spec.InitContainers[2].Name)
+	assert.Equal(t, 4, len(deployment.Spec.Template.Spec.InitContainers), deployment.Spec.Template.Spec.InitContainers[2].Name)
 	assert.Equal(t, "config-init", deployment.Spec.Template.Spec.InitContainers[0].Name)
 	assert.Equal(t, "copy-bins", deployment.Spec.Template.Spec.InitContainers[1].Name)
 	assert.Equal(t, "blkdevmapper", deployment.Spec.Template.Spec.InitContainers[2].Name)
-	assert.Equal(t, "expand-bluefs", deployment.Spec.Template.Spec.InitContainers[3].Name)
-	assert.Equal(t, "chown-container-data-dir", deployment.Spec.Template.Spec.InitContainers[4].Name)
+	assert.Equal(t, "chown-container-data-dir", deployment.Spec.Template.Spec.InitContainers[3].Name)
 	assert.Equal(t, 1, len(deployment.Spec.Template.Spec.Containers))
 	initCont = deployment.Spec.Template.Spec.InitContainers[0]
 	assert.Equal(t, 5, len(initCont.VolumeMounts), initCont.VolumeMounts)
@@ -212,7 +220,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	assert.Equal(t, 9, len(cont.VolumeMounts), cont.VolumeMounts)
 
 	// Test OSD on PVC with RAW
-	osd = OSDInfo{
+	osd = &OSDInfo{
 		ID:     0,
 		CVMode: "raw",
 	}
@@ -251,7 +259,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	assert.Equal(t, 10, len(deployment.Spec.Template.Spec.Volumes), deployment.Spec.Template.Spec.Volumes)
 
 	// // Test OSD on PVC with RAW and metadata device
-	osd = OSDInfo{
+	osd = &OSDInfo{
 		ID:     0,
 		CVMode: "raw",
 	}
@@ -275,7 +283,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	assert.Equal(t, 10, len(deployment.Spec.Template.Spec.Volumes), deployment.Spec.Template.Spec.Volumes)
 
 	// // Test encrypted OSD on PVC with RAW and metadata device
-	osd = OSDInfo{
+	osd = &OSDInfo{
 		ID:     0,
 		CVMode: "raw",
 	}
@@ -307,7 +315,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	assert.Equal(t, 12, len(deployment.Spec.Template.Spec.Volumes), deployment.Spec.Template.Spec.Volumes)
 
 	// // Test OSD on PVC with RAW / metadata and wal device
-	osd = OSDInfo{
+	osd = &OSDInfo{
 		ID:     0,
 		CVMode: "raw",
 	}
@@ -333,7 +341,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	assert.Equal(t, 12, len(deployment.Spec.Template.Spec.Volumes), deployment.Spec.Template.Spec.Volumes)
 
 	// // Test encrypted OSD on PVC with RAW / metadata and wal device
-	osd = OSDInfo{
+	osd = &OSDInfo{
 		ID:     0,
 		CVMode: "raw",
 	}
@@ -433,7 +441,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	deployment, err = c.makeDeployment(osdProp, osd, dataPathMap)
 	assert.NoError(t, err)
 	for _, flag := range defaultTuneFastSettings {
-		assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Command[3], flag)
+		assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Args, flag)
 	}
 
 	// Test tune Slow settings when OSD on PVC
@@ -441,7 +449,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	deployment, err = c.makeDeployment(osdProp, osd, dataPathMap)
 	assert.NoError(t, err)
 	for _, flag := range defaultTuneSlowSettings {
-		assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Command[3], flag)
+		assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Args, flag)
 	}
 
 	// Test shareProcessNamespace presence
@@ -463,7 +471,7 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 	t.Run(("check hostpid and shareprocessnamespace"), func(t *testing.T) {
 		clusterInfo := &cephclient.ClusterInfo{
 			Namespace:   "ns",
-			CephVersion: cephver.Quincy,
+			CephVersion: cephver.Squid,
 		}
 		clusterInfo.SetName("test")
 		clusterInfo.OwnerInfo = cephclient.NewMinimumOwnerInfo(t)
@@ -493,6 +501,17 @@ func testPodDevices(t *testing.T, dataDir, deviceName string, allDevices bool) {
 		assert.Equal(t, int32(900), deployment.Spec.Template.Spec.Containers[0].LivenessProbe.InitialDelaySeconds)
 		assert.Equal(t, int32(1000), deployment.Spec.Template.Spec.Containers[0].StartupProbe.InitialDelaySeconds)
 	})
+
+	// test custom topology label
+	t.Setenv("ROOK_CUSTOM_HOSTNAME_LABEL", "my_custom_hostname_label")
+	deployment, err = c.makeDeployment(osdProp, osd, dataPathMap)
+	assert.Nil(t, err)
+	assert.NotNil(t, deployment)
+	assert.Equal(t, "rook-ceph-osd-0", deployment.Name)
+	assert.Equal(t, c.clusterInfo.Namespace, deployment.Namespace)
+	assert.Equal(t, serviceAccountName, deployment.Spec.Template.Spec.ServiceAccountName)
+	assert.Equal(t, int32(1), *(deployment.Spec.Replicas))
+	assert.Equal(t, "node1", deployment.Spec.Template.Spec.NodeSelector["my_custom_hostname_label"])
 }
 
 func verifyEnvVar(t *testing.T, envVars []corev1.EnvVar, expectedName, expectedValue string, expectedFound bool) {
@@ -512,7 +531,7 @@ func TestStorageSpecConfig(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
 	clusterInfo := &cephclient.ClusterInfo{
 		Namespace:   "ns",
-		CephVersion: cephver.Quincy,
+		CephVersion: cephver.Squid,
 	}
 	clusterInfo.SetName("testing")
 	clusterInfo.OwnerInfo = cephclient.NewMinimumOwnerInfo(t)
@@ -595,7 +614,7 @@ func TestHostNetwork(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
 	clusterInfo := &cephclient.ClusterInfo{
 		Namespace:   "ns",
-		CephVersion: cephver.Quincy,
+		CephVersion: cephver.Squid,
 	}
 	clusterInfo.SetName("test")
 
@@ -608,7 +627,7 @@ func TestHostNetwork(t *testing.T) {
 	c := New(context, clusterInfo, spec, "rook/rook:myversion")
 
 	n := c.spec.Storage.ResolveNode(storageSpec.Nodes[0].Name)
-	osd := OSDInfo{
+	osd := &OSDInfo{
 		ID:     0,
 		CVMode: "raw",
 	}
@@ -712,7 +731,7 @@ func TestClusterGetPVCEncryptionInitContainerActivate(t *testing.T) {
 
 // WARNING! modifies c.deviceSets
 func getDummyDeploymentOnPVC(clientset *fake.Clientset, c *Cluster, pvcName string, osdID int) *appsv1.Deployment {
-	osd := OSDInfo{
+	osd := &OSDInfo{
 		ID:        osdID,
 		UUID:      "some-uuid",
 		BlockPath: "/some/path",
@@ -736,7 +755,7 @@ func getDummyDeploymentOnPVC(clientset *fake.Clientset, c *Cluster, pvcName stri
 
 // WARNING! modifies c.ValidStorage
 func getDummyDeploymentOnNode(clientset *fake.Clientset, c *Cluster, nodeName string, osdID int) *appsv1.Deployment {
-	osd := OSDInfo{
+	osd := &OSDInfo{
 		ID:        osdID,
 		UUID:      "some-uuid",
 		BlockPath: "/dev/vda",
@@ -756,7 +775,7 @@ func TestOSDPlacement(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
 	clusterInfo := &cephclient.ClusterInfo{
 		Namespace:   "ns",
-		CephVersion: cephver.Quincy,
+		CephVersion: cephver.Squid,
 	}
 	clusterInfo.SetName("testing")
 	clusterInfo.OwnerInfo = cephclient.NewMinimumOwnerInfo(t)
@@ -855,7 +874,7 @@ func TestOSDPlacement(t *testing.T) {
 	}
 
 	c := New(context, clusterInfo, spec, "rook/rook:myversion")
-	osd := OSDInfo{
+	osd := &OSDInfo{
 		ID:     0,
 		CVMode: "raw",
 	}

@@ -10,9 +10,9 @@ This guide will walk through the basic setup of a Ceph cluster and enable K8s ap
 
 **Always use a virtual machine when testing Rook. Never use a host system where local devices may mistakenly be consumed.**
 
-## Minimum Version
+## Kubernetes Version
 
-Kubernetes **v1.22** or higher is supported by Rook.
+Kubernetes versions **v1.27** through **v1.32** are supported.
 
 ## CPU Architecture
 
@@ -24,9 +24,11 @@ To check if a Kubernetes cluster is ready for `Rook`, see the [prerequisites](Pr
 
 To configure the Ceph storage cluster, at least one of these local storage options are required:
 
-* Raw devices (no partitions or formatted filesystems)
+* Raw devices (no partitions or formatted filesystem)
 * Raw partitions (no formatted filesystem)
 * LVM Logical Volumes (no formatted filesystem)
+* Encrypted devices (no formatted filesystem)
+* Multipath devices (no formatted filesystem)
 * Persistent Volumes available from a storage class in `block` mode
 
 ## TL;DR
@@ -170,7 +172,7 @@ Ceph has a dashboard to view the status of the cluster. See the [dashboard guide
 
 Create a toolbox pod for full access to a ceph admin client for debugging and troubleshooting the Rook cluster. See the [toolbox documentation](../Troubleshooting/ceph-toolbox.md) for setup and usage information.
 
-The [Rook Krew plugin](https://github.com/rook/kubectl-rook-ceph) provides commands to view status and troubleshoot issues.
+The [Rook kubectl plugin](https://github.com/rook/kubectl-rook-ceph) provides commands to view status and troubleshoot issues.
 
 See the [advanced configuration](../Storage-Configuration/Advanced/ceph-configuration.md) document for helpful maintenance and tuning examples.
 
@@ -185,7 +187,7 @@ The Rook maintainers would like to receive telemetry reports for Rook clusters.
 The data is anonymous and does not include any identifying information.
 Enable the telemetry reporting feature with the following command in the toolbox:
 
-```
+```console
 ceph telemetry on
 ```
 

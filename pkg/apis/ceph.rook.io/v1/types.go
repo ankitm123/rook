@@ -559,7 +559,8 @@ const (
 	ReconcileFailed ConditionReason = "ReconcileFailed"
 	// ReconcileStarted represents when a resource reconciliation started.
 	ReconcileStarted ConditionReason = "ReconcileStarted"
-
+	// ReconcileRequeuing represents when a resource reconciliation requeue.
+	ReconcileRequeuing ConditionReason = "ReconcileRequeuing"
 	// DeletingReason represents when Rook has detected a resource object should be deleted.
 	DeletingReason ConditionReason = "Deleting"
 	// ObjectHasDependentsReason represents when a resource object has dependents that are blocking
@@ -568,6 +569,18 @@ const (
 	// ObjectHasNoDependentsReason represents when a resource object has no dependents that are
 	// blocking deletion.
 	ObjectHasNoDependentsReason ConditionReason = "ObjectHasNoDependents"
+	// PoolNotEmptyReason represents when a pool contains images or snapshots that are blocking
+	// deletion.
+	PoolNotEmptyReason ConditionReason = "PoolNotEmpty"
+	// PoolEmptyReason represents when a pool does not contain images or snapshots that are blocking
+	// deletion.
+	PoolEmptyReason ConditionReason = "PoolEmpty"
+	// RadosNamespaceNotEmptyReason represents when a rados namespace contains images or snapshots that are blocking
+	// deletion.
+	RadosNamespaceNotEmptyReason ConditionReason = "RadosNamespaceNotEmpty"
+	// RadosNamespaceEmptyReason represents when a rados namespace does not contain images or snapshots that are blocking
+	// deletion.
+	RadosNamespaceEmptyReason ConditionReason = "RadosNamespaceEmpty"
 )
 
 // ConditionType represent a resource's status
@@ -589,6 +602,10 @@ const (
 
 	// ConditionDeletionIsBlocked represents when deletion of the object is blocked.
 	ConditionDeletionIsBlocked ConditionType = "DeletionIsBlocked"
+	// ConditionPoolDeletionIsBlocked represents when deletion of the object is blocked.
+	ConditionPoolDeletionIsBlocked ConditionType = "PoolDeletionIsBlocked"
+	// ConditionRadosNSDeletionIsBlocked represents when deletion of the object is blocked.
+	ConditionRadosNSDeletionIsBlocked ConditionType = "RadosNamespaceDeletionIsBlocked"
 )
 
 // ClusterState represents the state of a Ceph Cluster
@@ -921,6 +938,18 @@ type MirroringStatusSummarySpec struct {
 	// +optional
 	// +nullable
 	States StatesSpec `json:"states,omitempty"`
+	// ImageStates is the various state for all mirrored images
+	// +optional
+	// +nullable
+	ImageStates *StatesSpec `json:"image_states,omitempty"`
+	// GroupHealth is the health of the mirrored image group
+	// +optional
+	// +nullable
+	GroupHealth string `json:"group_health,omitempty"`
+	// GroupStates is the various state for all mirrored image groups
+	// +optional
+	// +nullable
+	GroupStates StatesSpec `json:"group_states,omitempty"`
 }
 
 // StatesSpec are rbd images mirroring state
@@ -2403,10 +2432,10 @@ type KafkaEndpointSpec struct {
 	Mechanism string `json:"mechanism,omitempty"`
 	// The kafka user name to use for authentication
 	// +optional
-	UserSecretRef *corev1.SecretKeySelector `json:"UserSecretRef,omitempty"`
+	UserSecretRef *corev1.SecretKeySelector `json:"userSecretRef,omitempty"`
 	// The kafka password to use for authentication
 	// +optional
-	PasswordSecretRef *corev1.SecretKeySelector `json:"PasswordSecretRef,omitempty"`
+	PasswordSecretRef *corev1.SecretKeySelector `json:"passwordSecretRef,omitempty"`
 }
 
 // +genclient
@@ -2748,7 +2777,7 @@ type AdditionalVolumeMounts []AdditionalVolumeMount
 type NetworkSpec struct {
 	// Provider is what provides network connectivity to the cluster e.g. "host" or "multus".
 	// If the Provider is updated from being empty to "host" on a running cluster, then the operator will automatically fail over all the mons to apply the "host" network settings.
-	// +kubebuilder:validation:XValidation:message="network provider must be disabled (reverted to empty string) before a new provider is enabled",rule="self == '' || self == oldSelf"
+	// +kubebuilder:validation:XValidation:message="network provider must be disabled (reverted to empty string) before a new provider is enabled",rule="self == '' || oldSelf == '' || self == oldSelf"
 	// +nullable
 	// +optional
 	Provider NetworkProviderType `json:"provider,omitempty"`
@@ -3534,6 +3563,7 @@ type CephBlockPoolRadosNamespaceStatus struct {
 	MirroringInfo *MirroringInfoSpec `json:"mirroringInfo,omitempty"`
 	// +optional
 	SnapshotScheduleStatus *SnapshotScheduleStatusSpec `json:"snapshotScheduleStatus,omitempty"`
+	Conditions             []Condition                 `json:"conditions,omitempty"`
 }
 
 // Represents the source of a volume to mount.

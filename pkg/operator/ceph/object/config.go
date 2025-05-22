@@ -91,7 +91,7 @@ func (c *clusterConfig) portString() string {
 
 func generateCephXUser(name string) string {
 	user := strings.TrimPrefix(name, AppName)
-	return "client.rgw" + strings.Replace(user, "-", ".", -1)
+	return "client.rgw" + strings.ReplaceAll(user, "-", ".")
 }
 
 func (c *clusterConfig) generateKeyring(rgwConfig *rgwConfig) (string, error) {
@@ -181,12 +181,6 @@ func (c *clusterConfig) generateMonConfigOptions(rgwConfig *rgwConfig) (map[stri
 	configOptions["rgw_enable_usage_log"] = "true"
 	configOptions["rgw_zone"] = rgwConfig.Zone
 	configOptions["rgw_zonegroup"] = rgwConfig.ZoneGroup
-
-	if c.store.Spec.Gateway.OpsLogSidecar != nil {
-		configOptions["rgw_enable_ops_log"] = "true"
-	} else {
-		configOptions["rgw_enable_ops_log"] = "false"
-	}
 
 	configOptions, err := configureKeystoneAuthentication(rgwConfig, configOptions)
 	if err != nil {

@@ -46,6 +46,7 @@ import (
 // +kubebuilder:printcolumn:name="External",type=boolean,JSONPath=`.spec.external.enable`
 // +kubebuilder:printcolumn:name="FSID",type=string,JSONPath=`.status.ceph.fsid`,description="Ceph FSID"
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=ceph
 type CephCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -559,7 +560,8 @@ const (
 	ReconcileFailed ConditionReason = "ReconcileFailed"
 	// ReconcileStarted represents when a resource reconciliation started.
 	ReconcileStarted ConditionReason = "ReconcileStarted"
-
+	// ReconcileRequeuing represents when a resource reconciliation requeue.
+	ReconcileRequeuing ConditionReason = "ReconcileRequeuing"
 	// DeletingReason represents when Rook has detected a resource object should be deleted.
 	DeletingReason ConditionReason = "Deleting"
 	// ObjectHasDependentsReason represents when a resource object has dependents that are blocking
@@ -568,6 +570,18 @@ const (
 	// ObjectHasNoDependentsReason represents when a resource object has no dependents that are
 	// blocking deletion.
 	ObjectHasNoDependentsReason ConditionReason = "ObjectHasNoDependents"
+	// PoolNotEmptyReason represents when a pool contains images or snapshots that are blocking
+	// deletion.
+	PoolNotEmptyReason ConditionReason = "PoolNotEmpty"
+	// PoolEmptyReason represents when a pool does not contain images or snapshots that are blocking
+	// deletion.
+	PoolEmptyReason ConditionReason = "PoolEmpty"
+	// RadosNamespaceNotEmptyReason represents when a rados namespace contains images or snapshots that are blocking
+	// deletion.
+	RadosNamespaceNotEmptyReason ConditionReason = "RadosNamespaceNotEmpty"
+	// RadosNamespaceEmptyReason represents when a rados namespace does not contain images or snapshots that are blocking
+	// deletion.
+	RadosNamespaceEmptyReason ConditionReason = "RadosNamespaceEmpty"
 )
 
 // ConditionType represent a resource's status
@@ -589,6 +603,10 @@ const (
 
 	// ConditionDeletionIsBlocked represents when deletion of the object is blocked.
 	ConditionDeletionIsBlocked ConditionType = "DeletionIsBlocked"
+	// ConditionPoolDeletionIsBlocked represents when deletion of the object is blocked.
+	ConditionPoolDeletionIsBlocked ConditionType = "PoolDeletionIsBlocked"
+	// ConditionRadosNSDeletionIsBlocked represents when deletion of the object is blocked.
+	ConditionRadosNSDeletionIsBlocked ConditionType = "RadosNamespaceDeletionIsBlocked"
 )
 
 // ClusterState represents the state of a Ceph Cluster
@@ -750,6 +768,7 @@ type CrashCollectorSpec struct {
 // +kubebuilder:printcolumn:name="EC-DataChunks",type=integer,JSONPath=`.spec.erasureCoded.dataChunks`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephbp
 type CephBlockPool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -921,6 +940,18 @@ type MirroringStatusSummarySpec struct {
 	// +optional
 	// +nullable
 	States StatesSpec `json:"states,omitempty"`
+	// ImageStates is the various state for all mirrored images
+	// +optional
+	// +nullable
+	ImageStates *StatesSpec `json:"image_states,omitempty"`
+	// GroupHealth is the health of the mirrored image group
+	// +optional
+	// +nullable
+	GroupHealth string `json:"group_health,omitempty"`
+	// GroupStates is the various state for all mirrored image groups
+	// +optional
+	// +nullable
+	GroupStates StatesSpec `json:"group_states,omitempty"`
 }
 
 // StatesSpec are rbd images mirroring state
@@ -1168,6 +1199,7 @@ type ErasureCodedSpec struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephfs
 type CephFilesystem struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -1471,6 +1503,7 @@ type PeerStatSpec struct {
 // +kubebuilder:printcolumn:name="SecureEndpoint",type=string,JSONPath=`.status.info.secureEndpoint`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephos
 type CephObjectStore struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -1986,7 +2019,7 @@ type ObjectEndpointSpec struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // CephObjectStoreUser represents a Ceph Object Store Gateway User
-// +kubebuilder:resource:shortName=rcou;objectuser
+// +kubebuilder:resource:shortName=rcou;objectuser;cephosu
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
@@ -2152,6 +2185,7 @@ type ObjectUserKey struct {
 
 // CephObjectRealm represents a Ceph Object Store Gateway Realm
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephor
 type CephObjectRealm struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -2190,6 +2224,7 @@ type PullSpec struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephozg
 type CephObjectZoneGroup struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -2221,6 +2256,7 @@ type ObjectZoneGroupSpec struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephoz
 type CephObjectZone struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -2286,6 +2322,7 @@ type ObjectZoneSpec struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephbt
 type CephBucketTopic struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -2403,10 +2440,10 @@ type KafkaEndpointSpec struct {
 	Mechanism string `json:"mechanism,omitempty"`
 	// The kafka user name to use for authentication
 	// +optional
-	UserSecretRef *corev1.SecretKeySelector `json:"UserSecretRef,omitempty"`
+	UserSecretRef *corev1.SecretKeySelector `json:"userSecretRef,omitempty"`
 	// The kafka password to use for authentication
 	// +optional
-	PasswordSecretRef *corev1.SecretKeySelector `json:"PasswordSecretRef,omitempty"`
+	PasswordSecretRef *corev1.SecretKeySelector `json:"passwordSecretRef,omitempty"`
 }
 
 // +genclient
@@ -2415,6 +2452,7 @@ type KafkaEndpointSpec struct {
 
 // CephBucketNotification represents a Bucket Notifications
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephbn
 type CephBucketNotification struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -2490,7 +2528,7 @@ type RGWServiceSpec struct {
 
 // +genclient
 // +genclient:noStatus
-// +kubebuilder:resource:shortName=nfs,path=cephnfses
+// +kubebuilder:resource:shortName=nfs;cephnfs,path=cephnfses
 
 // CephNFS represents a Ceph NFS
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -2748,7 +2786,7 @@ type AdditionalVolumeMounts []AdditionalVolumeMount
 type NetworkSpec struct {
 	// Provider is what provides network connectivity to the cluster e.g. "host" or "multus".
 	// If the Provider is updated from being empty to "host" on a running cluster, then the operator will automatically fail over all the mons to apply the "host" network settings.
-	// +kubebuilder:validation:XValidation:message="network provider must be disabled (reverted to empty string) before a new provider is enabled",rule="self == '' || self == oldSelf"
+	// +kubebuilder:validation:XValidation:message="network provider must be disabled (reverted to empty string) before a new provider is enabled",rule="self == '' || oldSelf == '' || self == oldSelf"
 	// +nullable
 	// +optional
 	Provider NetworkProviderType `json:"provider,omitempty"`
@@ -2938,6 +2976,7 @@ type DisruptionManagementSpec struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephcl
 type CephClient struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -3026,6 +3065,7 @@ type SanitizeDisksSpec struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephrbdm
 type CephRBDMirror struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -3098,6 +3138,7 @@ type MirroringPeerSpec struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephfsm
 type CephFilesystemMirror struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -3377,6 +3418,7 @@ type StorageClassDeviceSet struct {
 // +kubebuilder:printcolumn:name="Pinning",type=string,JSONPath=`.status.info.pinning`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephfssvg;cephsvg
 type CephFilesystemSubVolumeGroup struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -3462,6 +3504,7 @@ type CephFilesystemSubVolumeGroupStatus struct {
 // +kubebuilder:printcolumn:name="BlockPool",type=string,JSONPath=`.spec.blockPoolName`,description="Name of the Ceph BlockPool"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cephbprns;cephrns
 type CephBlockPoolRadosNamespace struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -3534,6 +3577,7 @@ type CephBlockPoolRadosNamespaceStatus struct {
 	MirroringInfo *MirroringInfoSpec `json:"mirroringInfo,omitempty"`
 	// +optional
 	SnapshotScheduleStatus *SnapshotScheduleStatusSpec `json:"snapshotScheduleStatus,omitempty"`
+	Conditions             []Condition                 `json:"conditions,omitempty"`
 }
 
 // Represents the source of a volume to mount.

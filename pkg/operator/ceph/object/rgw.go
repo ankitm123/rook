@@ -109,6 +109,11 @@ func (c *clusterConfig) startRGWPods(realmName, zoneGroupName, zoneName string, 
 		return errors.Wrap(err, "failed to check for RGWs to skip reconcile")
 	}
 
+	if rgwsToSkipReconcile.Has(c.store.Name) {
+		logger.Warningf("skipping reconcile of rgw deployment %q with label %q", c.store.Name, cephv1.SkipReconcileLabelKey)
+		return nil
+	}
+
 	// start a new deployment and scale up
 	// We force a single deployment and later set the deployment replica to the "instances" value
 	desiredRgwInstances := 1
@@ -116,11 +121,6 @@ func (c *clusterConfig) startRGWPods(realmName, zoneGroupName, zoneName string, 
 		var err error
 
 		daemonLetterID := k8sutil.IndexToName(i)
-
-		if rgwsToSkipReconcile.Has(daemonLetterID) {
-			logger.Warningf("skipping reconcile of rgw daemon %q with label %q", daemonLetterID, cephv1.SkipReconcileLabelKey)
-			return nil
-		}
 
 		// Each rgw is id'ed by <store_name>-<letterID>
 		daemonName := fmt.Sprintf("%s-%s", c.store.Name, daemonLetterID)
@@ -404,17 +404,18 @@ func GetTlsCaCert(objContext *Context, objectStoreSpec *cephv1.ObjectStoreSpec) 
 		if err != nil {
 			return nil, false, errors.Wrapf(err, "failed to get secret %q containing TLS certificate defined in %q", objectStoreSpec.Gateway.SSLCertificateRef, objContext.Name)
 		}
-		if tlsSecretCert.Type == v1.SecretTypeOpaque {
+		switch tlsSecretCert.Type {
+		case v1.SecretTypeOpaque:
 			tlsCert, ok = tlsSecretCert.Data[certKeyName]
 			if !ok {
 				return nil, false, errors.Errorf("failed to get TLS certificate from secret, token is %q but key %q does not exist", v1.SecretTypeOpaque, certKeyName)
 			}
-		} else if tlsSecretCert.Type == v1.SecretTypeTLS {
+		case v1.SecretTypeTLS:
 			tlsCert, ok = tlsSecretCert.Data[v1.TLSCertKey]
 			if !ok {
 				return nil, false, errors.Errorf("failed to get TLS certificate from secret, token is %q but key %q does not exist", v1.SecretTypeTLS, v1.TLSCertKey)
 			}
-		} else {
+		default:
 			return nil, false, errors.Errorf("failed to get TLS certificate from secret, unknown secret type %q", tlsSecretCert.Type)
 		}
 		// If the secret contains an indication that the TLS connection should be insecure, then

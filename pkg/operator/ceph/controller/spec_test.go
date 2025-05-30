@@ -34,6 +34,7 @@ import (
 	"github.com/rook/rook/pkg/operator/test"
 	exectest "github.com/rook/rook/pkg/util/exec/test"
 	"github.com/stretchr/testify/assert"
+	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -392,7 +393,7 @@ func TestLogCollectorContainer(t *testing.T) {
 
 	t.Run("Periodicity 1d and no MaxlogSize", func(t *testing.T) {
 		c := cephv1.ClusterSpec{LogCollector: cephv1.LogCollectorSpec{Enabled: true, Periodicity: "1d"}}
-		got := LogCollectorContainer(daemonId, ns, c)
+		got := LogCollectorContainer(daemonId, ns, c, nil)
 		want := fmt.Sprintf(cronLogRotate, daemonId, "daily", "0", "7", "")
 		assert.Equal(t, want, got.Command[5])
 	})
@@ -400,7 +401,7 @@ func TestLogCollectorContainer(t *testing.T) {
 	t.Run("Periodicity 1h and MaxlogSize 1M", func(t *testing.T) {
 		maxsize, _ := resource.ParseQuantity("1M")
 		c := cephv1.ClusterSpec{LogCollector: cephv1.LogCollectorSpec{Enabled: true, Periodicity: "1h", MaxLogSize: &maxsize}}
-		got := LogCollectorContainer("ceph-client.rbd-mirror.a", ns, c)
+		got := LogCollectorContainer("ceph-client.rbd-mirror.a", ns, c, nil)
 		want := fmt.Sprintf(cronLogRotate, "ceph-client.rbd-mirror.a", "hourly", "1M", "28", "")
 		assert.Equal(t, want, got.Command[5])
 	})
@@ -408,7 +409,7 @@ func TestLogCollectorContainer(t *testing.T) {
 	t.Run("Periodicity weekly and 1G MaxlogSize", func(t *testing.T) {
 		maxsize, _ := resource.ParseQuantity("1Gi")
 		c := cephv1.ClusterSpec{LogCollector: cephv1.LogCollectorSpec{Enabled: true, Periodicity: "weekly", MaxLogSize: &maxsize}}
-		got := LogCollectorContainer(daemonId, ns, c)
+		got := LogCollectorContainer(daemonId, ns, c, nil)
 		want := fmt.Sprintf(cronLogRotate, daemonId, "weekly", "1073M", "7", "")
 		assert.Equal(t, want, got.Command[5])
 	})
@@ -416,7 +417,7 @@ func TestLogCollectorContainer(t *testing.T) {
 	t.Run("MaxlogSize 1M and no Periodicity", func(t *testing.T) {
 		maxsize, _ := resource.ParseQuantity("1Mi")
 		c := cephv1.ClusterSpec{LogCollector: cephv1.LogCollectorSpec{Enabled: true, MaxLogSize: &maxsize}}
-		got := LogCollectorContainer(daemonId, ns, c)
+		got := LogCollectorContainer(daemonId, ns, c, nil)
 		want := fmt.Sprintf(cronLogRotate, daemonId, "daily", "1M", "7", "")
 		assert.Equal(t, want, got.Command[5])
 	})
@@ -424,7 +425,7 @@ func TestLogCollectorContainer(t *testing.T) {
 	t.Run("10G MaxlogSize and Periodicity 1d", func(t *testing.T) {
 		maxsize, _ := resource.ParseQuantity("10G")
 		c := cephv1.ClusterSpec{LogCollector: cephv1.LogCollectorSpec{Enabled: true, Periodicity: "1d", MaxLogSize: &maxsize}}
-		got := LogCollectorContainer(daemonId, ns, c)
+		got := LogCollectorContainer(daemonId, ns, c, nil)
 		want := fmt.Sprintf(cronLogRotate, daemonId, "daily", "10G", "7", "")
 		assert.Equal(t, want, got.Command[5])
 	})
@@ -432,7 +433,7 @@ func TestLogCollectorContainer(t *testing.T) {
 	t.Run("10M MaxlogSize and Periodicity weekly", func(t *testing.T) {
 		maxsize, _ := resource.ParseQuantity("10Mi")
 		c := cephv1.ClusterSpec{LogCollector: cephv1.LogCollectorSpec{Enabled: true, Periodicity: "weekly", MaxLogSize: &maxsize}}
-		got := LogCollectorContainer(daemonId, ns, c)
+		got := LogCollectorContainer(daemonId, ns, c, nil)
 		want := fmt.Sprintf(cronLogRotate, daemonId, "weekly", "10M", "7", "")
 		assert.Equal(t, want, got.Command[5])
 	})
@@ -440,7 +441,7 @@ func TestLogCollectorContainer(t *testing.T) {
 	t.Run("1M MaxlogSize and Periodicity 1d", func(t *testing.T) {
 		maxsize, _ := resource.ParseQuantity("1M")
 		c := cephv1.ClusterSpec{LogCollector: cephv1.LogCollectorSpec{Enabled: true, Periodicity: "1d", MaxLogSize: &maxsize}}
-		got := LogCollectorContainer(daemonId, ns, c)
+		got := LogCollectorContainer(daemonId, ns, c, nil)
 		want := fmt.Sprintf(cronLogRotate, daemonId, "daily", "1M", "7", "")
 		assert.Equal(t, want, got.Command[5])
 	})
@@ -448,7 +449,7 @@ func TestLogCollectorContainer(t *testing.T) {
 	t.Run("500k MaxlogSize and Periodicity 1d", func(t *testing.T) {
 		maxsize, _ := resource.ParseQuantity("500K")
 		c := cephv1.ClusterSpec{LogCollector: cephv1.LogCollectorSpec{Enabled: true, Periodicity: "1d", MaxLogSize: &maxsize}}
-		got := LogCollectorContainer(daemonId, ns, c)
+		got := LogCollectorContainer(daemonId, ns, c, nil)
 		want := fmt.Sprintf(cronLogRotate, daemonId, "daily", "1M", "7", "")
 		assert.Equal(t, want, got.Command[5])
 	})
@@ -457,7 +458,7 @@ func TestLogCollectorContainer(t *testing.T) {
 		additionalLogFile := "/tmp/ceph_test_log_500KB.log"
 		maxsize, _ := resource.ParseQuantity("500K")
 		c := cephv1.ClusterSpec{LogCollector: cephv1.LogCollectorSpec{Enabled: true, Periodicity: "1d", MaxLogSize: &maxsize}}
-		got := LogCollectorContainer(daemonId, ns, c, additionalLogFile)
+		got := LogCollectorContainer(daemonId, ns, c, nil, additionalLogFile)
 
 		want := fmt.Sprintf(cronLogRotate, daemonId, "daily", "1M", "7", additionalLogFile)
 		assert.Equal(t, want, got.Command[5])
@@ -571,4 +572,69 @@ func TestDaemonEnvVars(t *testing.T) {
 
 	got = ApplyNetworkEnv(clusterSpec)
 	assert.Equal(t, want, got)
+}
+
+func TestGetDaemonsToSkipReconcile(t *testing.T) {
+	tests := []struct {
+		name             string
+		labels           map[string]string
+		expectedSkip     bool
+		expectedDaemonID string
+	}{
+		{
+			name: "has skip-reconcile label",
+			labels: map[string]string{
+				k8sutil.AppAttr:              "rook-ceph-nfs",
+				cephv1.SkipReconcileLabelKey: "true",
+				config.NfsType:               "a",
+			},
+			expectedSkip:     true,
+			expectedDaemonID: "a",
+		},
+		{
+			name: "no skip-reconcile label",
+			labels: map[string]string{
+				k8sutil.AppAttr: "rook-ceph-nfs",
+				config.NfsType:  "b",
+			},
+			expectedSkip:     false,
+			expectedDaemonID: "b",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			namespace := "rook-ceph"
+			daemonName := "nfs"
+			appLabel := "rook-ceph-nfs"
+
+			clientset := test.New(t, 1)
+
+			dep := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("%s-%s-%s", appLabel, daemonName, tt.expectedDaemonID),
+					Namespace: namespace,
+					Labels:    tt.labels,
+				},
+			}
+
+			_, err := clientset.AppsV1().Deployments(namespace).Create(context.TODO(), dep, metav1.CreateOptions{})
+			assert.NoError(t, err)
+
+			clusterdCtx := &clusterd.Context{
+				Clientset: clientset,
+			}
+
+			result, err := GetDaemonsToSkipReconcile(context.TODO(), clusterdCtx, namespace, daemonName, appLabel)
+			assert.NoError(t, err)
+
+			if tt.expectedSkip {
+				assert.Len(t, result, 1)
+				assert.True(t, result.Has(tt.expectedDaemonID), "expected daemon ID %q to be skipped", tt.expectedDaemonID)
+			} else {
+				assert.Len(t, result, 0)
+				assert.False(t, result.Has(tt.expectedDaemonID), "expected daemon ID %q NOT to be skipped", tt.expectedDaemonID)
+			}
+		})
+	}
 }

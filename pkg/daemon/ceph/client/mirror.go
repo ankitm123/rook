@@ -26,7 +26,6 @@ import (
 	"github.com/pkg/errors"
 	cephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	"github.com/rook/rook/pkg/clusterd"
-	"github.com/rook/rook/pkg/operator/ceph/version"
 	cephver "github.com/rook/rook/pkg/operator/ceph/version"
 	"github.com/rook/rook/pkg/util/exec"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -53,10 +52,8 @@ type Images struct {
 }
 
 const (
-	mirrorModeDisabled   = "disabled"
-	mirrorModeInitOnly   = "init-only"
-	ImplicitNamespaceKey = "<implicit>"
-	ImplicitNamespaceVal = ""
+	mirrorModeDisabled = "disabled"
+	mirrorModeInitOnly = "init-only"
 )
 
 var (
@@ -128,7 +125,7 @@ func enablePoolMirroring(context *clusterd.Context, clusterInfo *ClusterInfo, po
 	logger.Infof("enabling mirroring type %q for pool %q", pool.Mirroring.Mode, pool.Name)
 
 	if pool.Mirroring.Mode == mirrorModeInitOnly && !clusterInfo.CephVersion.IsAtLeastTentacle() {
-		return fmt.Errorf("ceph version %q does not support mirroring mode %s, minimum ceph version required is %q", clusterInfo.CephVersion.String(), pool.Mirroring.Mode, version.Tentacle.String())
+		return fmt.Errorf("ceph version %q does not support mirroring mode %s, minimum ceph version required is %q", clusterInfo.CephVersion.String(), pool.Mirroring.Mode, cephver.Tentacle.String())
 	}
 
 	mirrorInfo, err := GetPoolMirroringInfo(context, clusterInfo, pool.Name)
@@ -205,6 +202,14 @@ func GetPoolMirroringStatus(context *clusterd.Context, clusterInfo *ClusterInfo,
 	var poolMirroringStatus cephv1.MirroringStatus
 	if err := json.Unmarshal([]byte(buf), &poolMirroringStatus); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal mirror pool status response")
+	}
+
+	if poolMirroringStatus.Summary != nil {
+		// for backward compatibility, we need to set the states field
+		// so to avoid breaking changes in the CRD that rook user might be using
+		if poolMirroringStatus.Summary.ImageStates != nil {
+			poolMirroringStatus.Summary.States = *poolMirroringStatus.Summary.ImageStates
+		}
 	}
 
 	return &poolMirroringStatus, nil
@@ -398,8 +403,8 @@ func EnableRBDRadosNamespaceMirroring(context *clusterd.Context, clusterInfo *Cl
 		return errors.Errorf("ceph version %q does not support mirroring in rados namespace %q with --remote-namespace flag, supported version are v20 and above.", clusterInfo.CephVersion.String(), poolAndRadosNamespaceName)
 	}
 
-	if remoteNamespace != nil && *remoteNamespace == ImplicitNamespaceKey {
-		*remoteNamespace = ImplicitNamespaceVal
+	if remoteNamespace != nil && *remoteNamespace == cephv1.ImplicitNamespaceKey {
+		*remoteNamespace = cephv1.ImplicitNamespaceVal
 	}
 
 	args := []string{"mirror", "pool", "enable", poolAndRadosNamespaceName, mode}

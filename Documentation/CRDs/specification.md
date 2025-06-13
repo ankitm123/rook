@@ -998,8 +998,8 @@ CephClusterHealthCheckSpec
 <td>
 <code>security</code><br/>
 <em>
-<a href="#ceph.rook.io/v1.SecuritySpec">
-SecuritySpec
+<a href="#ceph.rook.io/v1.ClusterSecuritySpec">
+ClusterSecuritySpec
 </a>
 </em>
 </td>
@@ -3388,6 +3388,18 @@ SnapshotScheduleStatusSpec
 <em>(Optional)</em>
 </td>
 </tr>
+<tr>
+<td>
+<code>conditions</code><br/>
+<em>
+<a href="#ceph.rook.io/v1.Condition">
+[]Condition
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
 </tbody>
 </table>
 <h3 id="ceph.rook.io/v1.CephBlockPoolStatus">CephBlockPoolStatus
@@ -4412,6 +4424,123 @@ One of Always, Never, IfNotPresent.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="ceph.rook.io/v1.CephxConfig">CephxConfig
+</h3>
+<p>
+(<em>Appears on:</em><a href="#ceph.rook.io/v1.ClusterCephxConfig">ClusterCephxConfig</a>)
+</p>
+<div>
+</div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>keyRotationPolicy</code><br/>
+<em>
+<a href="#ceph.rook.io/v1.CephxKeyRotationPolicy">
+CephxKeyRotationPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>KeyRotationPolicy controls if and when CephX keys are rotated after initial creation.
+One of Disabled, or KeyGeneration. Default Disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyGeneration</code><br/>
+<em>
+uint32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>KeyGeneration specifies the desired CephX key generation. This is used when KeyRotationPolicy
+is KeyGeneration and ignored for other policies. If this is set to greater than the current
+key generation, relevant keys will be rotated, and the generation value will be updated to
+this new value (generation values are not necessarily incremental, though that is the
+intended use case). If this is set to less than or equal to the current key generation, keys
+are not rotated.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ceph.rook.io/v1.CephxKeyRotationPolicy">CephxKeyRotationPolicy
+(<code>string</code> alias)</h3>
+<p>
+(<em>Appears on:</em><a href="#ceph.rook.io/v1.CephxConfig">CephxConfig</a>)
+</p>
+<div>
+</div>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disabled&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;KeyGeneration&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
+<h3 id="ceph.rook.io/v1.CephxStatus">CephxStatus
+</h3>
+<p>
+(<em>Appears on:</em><a href="#ceph.rook.io/v1.LocalCephxStatus">LocalCephxStatus</a>)
+</p>
+<div>
+</div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>keyGeneration</code><br/>
+<em>
+uint32
+</em>
+</td>
+<td>
+<p>KeyGeneration represents the CephX key generation for the last successful reconcile.
+For all newly-created resources, this field is set to <code>1</code>.
+When keys are rotated due to any rotation policy, the generation is incremented or updated to
+the configured policy generation.
+Generation <code>0</code> indicates that keys existed prior to the implementation of key tracking.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyCephVersion</code><br/>
+<em>
+string
+</em>
+</td>
+<td>
+<p>KeyCephVersion reports the Ceph version that created the current generation&rsquo;s keys. This is
+same string format as reported by <code>CephCluster.status.version.version</code> to allow them to be
+compared. E.g., <code>20.2.0-0</code>.
+For all newly-created resources, this field set to the version of Ceph that created the key.
+The special value &ldquo;Uninitialized&rdquo; indicates that keys are being created for the first time.
+An empty string indicates that the version is unknown, as expected in brownfield deployments.</p>
+</td>
+</tr>
+</tbody>
+</table>
 <h3 id="ceph.rook.io/v1.CleanupConfirmationProperty">CleanupConfirmationProperty
 (<code>string</code> alias)</h3>
 <p>
@@ -4488,6 +4617,19 @@ bool
 <p>AllowUninstallWithVolumes defines whether we can proceed with the uninstall if they are RBD images still present</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>wipeDevicesFromOtherClusters</code><br/>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>WipeDevicesFromOtherClusters wipes the OSD disks belonging to other clusters. This is useful in scenarios where ceph cluster
+was reinstalled but OSD disk still contains the metadata from previous ceph cluster.</p>
+</td>
+</tr>
 </tbody>
 </table>
 <h3 id="ceph.rook.io/v1.ClientSpec">ClientSpec
@@ -4525,6 +4667,97 @@ map[string]string
 </em>
 </td>
 <td>
+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ceph.rook.io/v1.ClusterCephxConfig">ClusterCephxConfig
+</h3>
+<p>
+(<em>Appears on:</em><a href="#ceph.rook.io/v1.ClusterSecuritySpec">ClusterSecuritySpec</a>)
+</p>
+<div>
+</div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>daemon</code><br/>
+<em>
+<a href="#ceph.rook.io/v1.CephxConfig">
+CephxConfig
+</a>
+</em>
+</td>
+<td>
+<p>Daemon configures CephX key settings for local Ceph daemons managed by Rook and part of the
+Ceph cluster. Daemon CephX keys can be rotated without affecting client connections.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ceph.rook.io/v1.ClusterSecuritySpec">ClusterSecuritySpec
+</h3>
+<p>
+(<em>Appears on:</em><a href="#ceph.rook.io/v1.ClusterSpec">ClusterSpec</a>)
+</p>
+<div>
+<p>ClusterSecuritySpec is the CephCluster security spec to include various security items such as kms</p>
+</div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>kms</code><br/>
+<em>
+<a href="#ceph.rook.io/v1.KeyManagementServiceSpec">
+KeyManagementServiceSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>KeyManagementService is the main Key Management option</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyRotation</code><br/>
+<em>
+<a href="#ceph.rook.io/v1.KeyRotationSpec">
+KeyRotationSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>KeyRotation defines options for rotation of OSD disk encryption keys.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cephx</code><br/>
+<em>
+<a href="#ceph.rook.io/v1.ClusterCephxConfig">
+ClusterCephxConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CephX configures CephX key settings. More: <a href="https://docs.ceph.com/en/latest/dev/cephx/">https://docs.ceph.com/en/latest/dev/cephx/</a></p>
 </td>
 </tr>
 </tbody>
@@ -4867,8 +5100,8 @@ CephClusterHealthCheckSpec
 <td>
 <code>security</code><br/>
 <em>
-<a href="#ceph.rook.io/v1.SecuritySpec">
-SecuritySpec
+<a href="#ceph.rook.io/v1.ClusterSecuritySpec">
+ClusterSecuritySpec
 </a>
 </em>
 </td>
@@ -5149,7 +5382,7 @@ The default is not set.</p>
 <h3 id="ceph.rook.io/v1.Condition">Condition
 </h3>
 <p>
-(<em>Appears on:</em><a href="#ceph.rook.io/v1.CephBlockPoolStatus">CephBlockPoolStatus</a>, <a href="#ceph.rook.io/v1.CephFilesystemStatus">CephFilesystemStatus</a>, <a href="#ceph.rook.io/v1.ClusterStatus">ClusterStatus</a>, <a href="#ceph.rook.io/v1.ObjectStoreStatus">ObjectStoreStatus</a>, <a href="#ceph.rook.io/v1.Status">Status</a>)
+(<em>Appears on:</em><a href="#ceph.rook.io/v1.CephBlockPoolRadosNamespaceStatus">CephBlockPoolRadosNamespaceStatus</a>, <a href="#ceph.rook.io/v1.CephBlockPoolStatus">CephBlockPoolStatus</a>, <a href="#ceph.rook.io/v1.CephFilesystemStatus">CephFilesystemStatus</a>, <a href="#ceph.rook.io/v1.ClusterStatus">ClusterStatus</a>, <a href="#ceph.rook.io/v1.ObjectStoreStatus">ObjectStoreStatus</a>, <a href="#ceph.rook.io/v1.Status">Status</a>)
 </p>
 <div>
 <p>Condition represents a status condition on any Rook-Ceph Custom Resource.</p>
@@ -5275,8 +5508,27 @@ deletion.</p>
 <td><p>ObjectHasNoDependentsReason represents when a resource object has no dependents that are
 blocking deletion.</p>
 </td>
+</tr><tr><td><p>&#34;PoolEmpty&#34;</p></td>
+<td><p>PoolEmptyReason represents when a pool does not contain images or snapshots that are blocking
+deletion.</p>
+</td>
+</tr><tr><td><p>&#34;PoolNotEmpty&#34;</p></td>
+<td><p>PoolNotEmptyReason represents when a pool contains images or snapshots that are blocking
+deletion.</p>
+</td>
+</tr><tr><td><p>&#34;RadosNamespaceEmpty&#34;</p></td>
+<td><p>RadosNamespaceEmptyReason represents when a rados namespace does not contain images or snapshots that are blocking
+deletion.</p>
+</td>
+</tr><tr><td><p>&#34;RadosNamespaceNotEmpty&#34;</p></td>
+<td><p>RadosNamespaceNotEmptyReason represents when a rados namespace contains images or snapshots that are blocking
+deletion.</p>
+</td>
 </tr><tr><td><p>&#34;ReconcileFailed&#34;</p></td>
 <td><p>ReconcileFailed represents when a resource reconciliation failed.</p>
+</td>
+</tr><tr><td><p>&#34;ReconcileRequeuing&#34;</p></td>
+<td><p>ReconcileRequeuing represents when a resource reconciliation requeue.</p>
 </td>
 </tr><tr><td><p>&#34;ReconcileStarted&#34;</p></td>
 <td><p>ReconcileStarted represents when a resource reconciliation started.</p>
@@ -5316,8 +5568,14 @@ blocking deletion.</p>
 </tr><tr><td><p>&#34;Failure&#34;</p></td>
 <td><p>ConditionFailure represents Failure state of an object</p>
 </td>
+</tr><tr><td><p>&#34;PoolDeletionIsBlocked&#34;</p></td>
+<td><p>ConditionPoolDeletionIsBlocked represents when deletion of the object is blocked.</p>
+</td>
 </tr><tr><td><p>&#34;Progressing&#34;</p></td>
 <td><p>ConditionProgressing represents Progressing state of an object</p>
+</td>
+</tr><tr><td><p>&#34;RadosNamespaceDeletionIsBlocked&#34;</p></td>
+<td><p>ConditionRadosNSDeletionIsBlocked represents when deletion of the object is blocked.</p>
 </td>
 </tr><tr><td><p>&#34;Ready&#34;</p></td>
 <td><p>ConditionReady represents Ready state of an object</p>
@@ -7572,7 +7830,7 @@ string
 </tr>
 <tr>
 <td>
-<code>UserSecretRef</code><br/>
+<code>userSecretRef</code><br/>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#secretkeyselector-v1-core">
 Kubernetes core/v1.SecretKeySelector
@@ -7586,7 +7844,7 @@ Kubernetes core/v1.SecretKeySelector
 </tr>
 <tr>
 <td>
-<code>PasswordSecretRef</code><br/>
+<code>passwordSecretRef</code><br/>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#secretkeyselector-v1-core">
 Kubernetes core/v1.SecretKeySelector
@@ -7762,7 +8020,7 @@ securely add the file via annotations on the CephNFS spec (passed to the NFS ser
 <h3 id="ceph.rook.io/v1.KeyManagementServiceSpec">KeyManagementServiceSpec
 </h3>
 <p>
-(<em>Appears on:</em><a href="#ceph.rook.io/v1.ObjectStoreSecuritySpec">ObjectStoreSecuritySpec</a>, <a href="#ceph.rook.io/v1.SecuritySpec">SecuritySpec</a>)
+(<em>Appears on:</em><a href="#ceph.rook.io/v1.ClusterSecuritySpec">ClusterSecuritySpec</a>, <a href="#ceph.rook.io/v1.ObjectStoreSecuritySpec">ObjectStoreSecuritySpec</a>, <a href="#ceph.rook.io/v1.SecuritySpec">SecuritySpec</a>)
 </p>
 <div>
 <p>KeyManagementServiceSpec represent various details of the KMS server</p>
@@ -7804,7 +8062,7 @@ string
 <h3 id="ceph.rook.io/v1.KeyRotationSpec">KeyRotationSpec
 </h3>
 <p>
-(<em>Appears on:</em><a href="#ceph.rook.io/v1.SecuritySpec">SecuritySpec</a>)
+(<em>Appears on:</em><a href="#ceph.rook.io/v1.ClusterSecuritySpec">ClusterSecuritySpec</a>, <a href="#ceph.rook.io/v1.SecuritySpec">SecuritySpec</a>)
 </p>
 <div>
 <p>KeyRotationSpec represents the settings for Key Rotation.</p>
@@ -7992,6 +8250,36 @@ int
 <div>
 <p>LabelsSpec is the main spec label for all daemons</p>
 </div>
+<h3 id="ceph.rook.io/v1.LocalCephxStatus">LocalCephxStatus
+</h3>
+<p>
+(<em>Appears on:</em><a href="#ceph.rook.io/v1.ObjectStoreStatus">ObjectStoreStatus</a>)
+</p>
+<div>
+</div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>daemon</code><br/>
+<em>
+<a href="#ceph.rook.io/v1.CephxStatus">
+CephxStatus
+</a>
+</em>
+</td>
+<td>
+<p>Daemon shows the CephX key status for local Ceph daemons associated with this resources.</p>
+</td>
+</tr>
+</tbody>
+</table>
 <h3 id="ceph.rook.io/v1.LogCollectorSpec">LogCollectorSpec
 </h3>
 <p>
@@ -8718,6 +9006,46 @@ StatesSpec
 <td>
 <em>(Optional)</em>
 <p>States is the various state for all mirrored images</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>image_states</code><br/>
+<em>
+<a href="#ceph.rook.io/v1.StatesSpec">
+StatesSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ImageStates is the various state for all mirrored images</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>group_health</code><br/>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>GroupHealth is the health of the mirrored image group</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>group_states</code><br/>
+<em>
+<a href="#ceph.rook.io/v1.StatesSpec">
+StatesSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>GroupStates is the various state for all mirrored image groups</p>
 </td>
 </tr>
 </tbody>
@@ -10394,6 +10722,18 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
+</td>
+</tr>
+<tr>
+<td>
+<code>cephx</code><br/>
+<em>
+<a href="#ceph.rook.io/v1.LocalCephxStatus">
+LocalCephxStatus
+</a>
+</em>
+</td>
+<td>
 </td>
 </tr>
 <tr>
@@ -12601,7 +12941,7 @@ string
 <h3 id="ceph.rook.io/v1.SecuritySpec">SecuritySpec
 </h3>
 <p>
-(<em>Appears on:</em><a href="#ceph.rook.io/v1.ClusterSpec">ClusterSpec</a>, <a href="#ceph.rook.io/v1.ObjectStoreSecuritySpec">ObjectStoreSecuritySpec</a>)
+(<em>Appears on:</em><a href="#ceph.rook.io/v1.ObjectStoreSecuritySpec">ObjectStoreSecuritySpec</a>)
 </p>
 <div>
 <p>SecuritySpec is security spec to include various security items such as kms</p>

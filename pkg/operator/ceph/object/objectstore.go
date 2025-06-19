@@ -1158,7 +1158,8 @@ func checkDashboardUser(context *Context, user ObjectUser) (bool, error) {
 	dUser, errId, err := GetUser(context, DashboardUser)
 
 	// If not found or "none" error, all is good to not return the error
-	if errId == RGWErrorNone {
+	switch errId {
+	case RGWErrorNone:
 		// If the access key or secret key is not the same as the given user, return false
 		if user.AccessKey != nil && *user.AccessKey != *dUser.AccessKey {
 			return false, nil
@@ -1166,12 +1167,10 @@ func checkDashboardUser(context *Context, user ObjectUser) (bool, error) {
 		if user.SecretKey != nil && *user.SecretKey != *dUser.SecretKey {
 			return false, nil
 		}
-
 		return true, nil
-	} else if errId == RGWErrorNotFound {
+	case RGWErrorNotFound:
 		return false, nil
 	}
-
 	return false, err
 }
 
@@ -1400,10 +1399,10 @@ func ValidateObjectStorePoolsConfig(metadataPool, dataPool cephv1.PoolSpec, shar
 		return err
 	}
 	if !EmptyPool(dataPool) && sharedPools.DataPoolName != "" {
-		return fmt.Errorf("invalidObjStorePoolConfig: object store dataPool and sharedPools.dataPool=%s are mutually exclusive. Only one of them can be set.", sharedPools.DataPoolName)
+		return fmt.Errorf("invalidObjStorePoolConfig: object store dataPool and sharedPools.dataPool=%s are mutually exclusive. Only one of them can be set", sharedPools.DataPoolName)
 	}
 	if !EmptyPool(metadataPool) && sharedPools.MetadataPoolName != "" {
-		return fmt.Errorf("invalidObjStorePoolConfig: object store metadataPool and sharedPools.metadataPool=%s are mutually exclusive. Only one of them can be set.", sharedPools.MetadataPoolName)
+		return fmt.Errorf("invalidObjStorePoolConfig: object store metadataPool and sharedPools.metadataPool=%s are mutually exclusive. Only one of them can be set", sharedPools.MetadataPoolName)
 	}
 	return nil
 }

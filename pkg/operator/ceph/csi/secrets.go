@@ -98,7 +98,7 @@ func cephCSIKeyringCephFSNodeCaps() []string {
 	return []string{
 		"mon", "allow r",
 		"mgr", "allow rw",
-		"osd", "allow rw tag cephfs *=*",
+		"osd", "allow rwx tag cephfs metadata=*, allow rw tag cephfs data=*",
 		"mds", "allow rw",
 	}
 }
@@ -159,7 +159,7 @@ func createOrUpdateCSISecret(clusterInfo *client.ClusterInfo, csiRBDProvisionerS
 		}
 
 		// Create Kubernetes Secret
-		err = k.CreateSecret(s)
+		_, err = k.CreateSecret(s)
 		if err != nil {
 			return errors.Wrapf(err, "failed to create kubernetes secret %q for cluster %q", s.Name, clusterInfo.Namespace)
 		}

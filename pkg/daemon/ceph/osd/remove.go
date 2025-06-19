@@ -125,10 +125,8 @@ func removeOSD(clusterdContext *clusterd.Context, clusterInfo *client.ClusterInf
 	} else {
 		logger.Infof("removing the OSD deployment %q", deploymentName)
 		if err := k8sutil.DeleteDeployment(clusterInfo.Context, clusterdContext.Clientset, clusterInfo.Namespace, deploymentName); err != nil {
-			if err != nil {
-				// Continue purging the OSD even if the deployment fails to be deleted
-				logger.Errorf("failed to delete deployment for OSD %d. %v", osdID, err)
-			}
+			// Continue purging the OSD even if the deployment fails to be deleted
+			logger.Errorf("failed to delete deployment for OSD %d. %v", osdID, err)
 		}
 		if pvcName, ok := deployment.GetLabels()[oposd.OSDOverPVCLabelKey]; ok {
 			removeOSDPrepareJob(clusterdContext, clusterInfo, pvcName)
@@ -172,10 +170,8 @@ func removeOSDPrepareJob(clusterdContext *clusterd.Context, clusterInfo *client.
 	for _, prepareJob := range prepareJobList.Items {
 		logger.Infof("removing the osd prepare job %q", prepareJob.GetName())
 		if err := k8sutil.DeleteBatchJob(clusterInfo.Context, clusterdContext.Clientset, clusterInfo.Namespace, prepareJob.GetName(), false); err != nil {
-			if err != nil {
-				// Continue with the cleanup even if the job fails to be deleted
-				logger.Errorf("failed to delete prepare job for osd %q. %v", prepareJob.GetName(), err)
-			}
+			// Continue with the cleanup even if the job fails to be deleted
+			logger.Errorf("failed to delete prepare job for osd %q. %v", prepareJob.GetName(), err)
 		}
 	}
 }
@@ -212,10 +208,8 @@ func removePVCs(clusterdContext *clusterd.Context, clusterInfo *client.ClusterIn
 			// Remove the OSD PVC
 			logger.Infof("removing the OSD PVC %q", pvc.Name)
 			if err := clusterdContext.Clientset.CoreV1().PersistentVolumeClaims(clusterInfo.Namespace).Delete(clusterInfo.Context, pvc.Name, metav1.DeleteOptions{}); err != nil {
-				if err != nil {
-					// Continue deleting the OSD PVC even if PVC deletion fails
-					logger.Errorf("failed to delete pvc %q for OSD. %v", pvc.Name, err)
-				}
+				// Continue deleting the OSD PVC even if PVC deletion fails
+				logger.Errorf("failed to delete pvc %q for OSD. %v", pvc.Name, err)
 			}
 		}
 	}
@@ -262,16 +256,19 @@ func DestroyOSD(context *clusterd.Context, clusterInfo *client.ClusterInfo, id i
 	}
 	logger.Infof("successfully destroyed osd.%d", osdInfo.ID)
 
-	if isPVC && osdInfo.Encrypted {
-		// remove the dm device
+	// in case of OSD on PVs, fetch the actual device name for the mounted /mnt/<pvc-name>
+	if isPVC {
 		pvcName := os.Getenv(oposd.PVCNameEnvVarName)
-		target := oposd.EncryptionDMName(pvcName, oposd.DmcryptBlockType)
-		err = removeEncryptedDevice(context, target)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to remove dm device %q", target)
+
+		// remove the dm device
+		if osdInfo.Encrypted {
+			target := oposd.EncryptionDMName(pvcName, oposd.DmcryptBlockType)
+			err = removeEncryptedDevice(context, target)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to remove dm device %q", target)
+			}
 		}
-		// ceph-volume uses `/dev/mapper/*` for encrypted disks. This is not a block device. So we need to fetch the corresponding
-		// block device for cleanup using `ceph-volume lvm zap`
+		// fetch the actual device for cleanup
 		blockPath := fmt.Sprintf("/mnt/%s", pvcName)
 		diskInfo, err := clusterd.PopulateDeviceInfo(blockPath, context.Executor)
 		if err != nil {
